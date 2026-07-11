@@ -1,50 +1,52 @@
-package main
+package game
 
 import rl "vendor:raylib"
 
-Cell :: struct {
-	x:     i32,
-	y:     i32,
-	walls: u8,
-}
-MAZE_WIDTH: i32 = 10
-MAZE_HEIGHT: i32 = 10
-
-CELL_SIZE: f32 : 20
-
+MAZE_WIDTH: i32 : 20
+MAZE_HEIGHT: i32 : 20
+CELL_SIZE: f32 : 30
 WIDTH :: 800
 HEIGHT :: 800
 
-TOP_WALL :: 1 << 3
-RIGHT_WALL :: 1 << 2
-DOWN_WALL :: 1 << 1
-LEFT_WALL :: 1 << 0
+TOP_WALL: u8 : 1 << 3
+RIGHT_WALL: u8 : 1 << 2
+DOWN_WALL: u8 : 1 << 1
+LEFT_WALL: u8 : 1 << 0
 
-main :: proc() {
-	maze := make([]Cell, MAZE_WIDTH * MAZE_HEIGHT)
-	generate_maze(maze)
+Cell :: struct {
+	walls: u8,
+}
 
-	rl.InitWindow(WIDTH, HEIGHT, "labyrinth")
-	rl.SetTargetFPS(60)
+Game_Memory :: struct {
+	run:  bool,
+	maze: []Cell,
+}
 
-	for !rl.WindowShouldClose() {
-		rl.BeginDrawing()
-		rl.ClearBackground(rl.BLACK)
-		draw_maze(maze)
-		rl.EndDrawing()
-	}
-	rl.CloseWindow()
+g: ^Game_Memory
+
+@(export)
+game_init :: proc() {
+	g = new(Game_Memory)
+	g.maze = make([]Cell, MAZE_WIDTH * MAZE_HEIGHT)
+	g.run = true
+	generate_maze(g.maze[:])
+	game_hot_reloaded(g)
+}
+update :: proc() {
+	if rl.IsKeyPressed(.ESCAPE) {g.run = false}
+
+	rl.BeginDrawing()
+	rl.ClearBackground(rl.BLACK)
+	draw_maze(g.maze)
+	rl.EndDrawing()
+
+	free_all(context.temp_allocator)
 }
 
 generate_maze :: proc(maze: []Cell) {
-	for x in 0 ..< MAZE_WIDTH {
-		for y in 0 ..< MAZE_HEIGHT {
-			i := (y * MAZE_WIDTH) + x
-			maze[i] = Cell {
-				x     = x,
-				y     = y,
-				walls = TOP_WALL | RIGHT_WALL | DOWN_WALL | LEFT_WALL,
-			}
+	for i in 0 ..< len(maze) {
+		maze[i] = Cell {
+			walls = TOP_WALL | RIGHT_WALL | DOWN_WALL | LEFT_WALL,
 		}
 	}
 }
@@ -56,18 +58,10 @@ draw_maze :: proc(maze: []Cell) {
 			px := f32(x) * CELL_SIZE
 			py := f32(y) * CELL_SIZE
 
-			if is_wall(cell.walls, TOP_WALL) {
-				render_wall(px, py, TOP_WALL)
-			}
-			if is_wall(cell.walls, RIGHT_WALL) {
-				render_wall(px, py, RIGHT_WALL)
-			}
-			if is_wall(cell.walls, DOWN_WALL) {
-				render_wall(px, py, DOWN_WALL)
-			}
-			if is_wall(cell.walls, LEFT_WALL) {
-				render_wall(px, py, LEFT_WALL)
-			}
+			if is_wall(cell.walls, TOP_WALL) {render_wall(px, py, TOP_WALL)}
+			if is_wall(cell.walls, RIGHT_WALL) {render_wall(px, py, RIGHT_WALL)}
+			if is_wall(cell.walls, DOWN_WALL) {render_wall(px, py, DOWN_WALL)}
+			if is_wall(cell.walls, LEFT_WALL) {render_wall(px, py, LEFT_WALL)}
 		}
 	}
 }
@@ -111,5 +105,7 @@ get_cell :: proc(x, y: i32, maze: []Cell) -> Cell {
 
 set_cell :: proc(x, y: i32, walls: u8, maze: []Cell) {
 	idx := (y * MAZE_WIDTH) + x
-	maze[idx] = Cell{x, y, walls}
+	maze[idx] = Cell {
+		walls = walls,
+	}
 }
