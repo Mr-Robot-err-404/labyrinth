@@ -1,5 +1,6 @@
 package game
 
+import "core:math/rand"
 import rl "vendor:raylib"
 
 MAZE_WIDTH: i32 : 20
@@ -13,15 +14,22 @@ RIGHT_WALL: u8 : 1 << 2
 DOWN_WALL: u8 : 1 << 1
 LEFT_WALL: u8 : 1 << 0
 
+DIR := [4]Coord{{0, -1}, {1, 0}, {0, 1}, {-1, 0}}
+EXITS := [4]u8{TOP_WALL, RIGHT_WALL, DOWN_WALL, LEFT_WALL}
+START :: Coord{4, 12}
+
 Cell :: struct {
 	walls: u8,
 }
-
-Game_Memory :: struct {
-	run:  bool,
-	maze: []Cell,
+Coord :: struct {
+	x, y: i32,
 }
 
+Game_Memory :: struct {
+	run:     bool,
+	maze:    []Cell,
+	visited: []bool,
+}
 g: ^Game_Memory
 
 @(export)
@@ -44,11 +52,64 @@ update :: proc() {
 }
 
 generate_maze :: proc(maze: []Cell) {
+	visited := make([]bool, MAZE_WIDTH * MAZE_HEIGHT)
+	defer delete(visited)
 	for i in 0 ..< len(maze) {
 		maze[i] = Cell {
 			walls = TOP_WALL | RIGHT_WALL | DOWN_WALL | LEFT_WALL,
 		}
 	}
+	walk(START.x, START.y, maze, visited, 0)
+}
+
+walk :: proc(x, y: i32, maze: []Cell, visited: []bool, entry: u8) -> bool {
+	if out_of_bounds(x, y) {return false}
+	idx := maze_idx(x, y)
+	if visited[idx] {return false}
+
+	visited[idx] = true
+	maze[idx].walls &~= entry
+
+	indices := [4]int{0, 1, 2, 3}
+	shuffle(&indices)
+
+	for i in indices {
+		dir := DIR[i]
+		exit := EXITS[i]
+		smash := walk(x + dir.x, y + dir.y, maze, visited, inverse_direction(exit))
+		if !smash {continue}
+		maze[idx].walls &~= exit
+	}
+	return true
+}
+shuffle :: proc(arr: ^[4]int) {
+	for i := len(arr) - 1; i > 0; i -= 1 {
+		j := rand.int_max(i + 1)
+		arr[i], arr[j] = arr[j], arr[i]
+	}
+}
+inverse_direction :: proc(wall: u8) -> u8 {
+	switch wall {
+	case TOP_WALL:
+		return DOWN_WALL
+	case DOWN_WALL:
+		return TOP_WALL
+	case RIGHT_WALL:
+		return LEFT_WALL
+	case LEFT_WALL:
+		return RIGHT_WALL
+	}
+	return 0
+}
+
+out_of_bounds :: proc(x, y: i32) -> bool {
+	if x < 0 || y < 0 {return true}
+	if x >= MAZE_WIDTH || y >= MAZE_HEIGHT {return true}
+	return false
+}
+
+maze_idx :: proc(x, y: i32) -> i32 {
+	return (y * MAZE_WIDTH) + x
 }
 
 draw_maze :: proc(maze: []Cell) {
