@@ -1,13 +1,15 @@
 package game
 
+import "core:math"
 import "core:math/rand"
 import rl "vendor:raylib"
 
 MAZE_WIDTH: i32 : 20
 MAZE_HEIGHT: i32 : 20
 CELL_SIZE: f32 : 30
-WIDTH :: 800
-HEIGHT :: 800
+HEX_SIZE: f64 : 30
+WIDTH: i32 : 800
+HEIGHT: i32 : 800
 
 TOP_WALL: u8 : 1 << 3
 RIGHT_WALL: u8 : 1 << 2
@@ -24,11 +26,13 @@ Cell :: struct {
 Coord :: struct {
 	x, y: i32,
 }
+Coord_f64 :: struct {
+	x, y: f64,
+}
 
 Game_Memory :: struct {
-	run:     bool,
-	maze:    []Cell,
-	visited: []bool,
+	run:  bool,
+	maze: []Cell,
 }
 g: ^Game_Memory
 
@@ -45,10 +49,36 @@ update :: proc() {
 
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
-	draw_maze(g.maze)
+	// draw_maze(g.maze)
+	draw_hex(0, 0)
 	rl.EndDrawing()
 
 	free_all(context.temp_allocator)
+}
+
+draw_hex :: proc(q, r: i32) {
+	x, y := i32(WIDTH / 2), i32(HEIGHT / 2)
+	cx := HEX_SIZE * math.sqrt_f64(3) * (f64(q) + f64(r) / 2)
+	cy := HEX_SIZE * 3 / 2 * f64(r)
+
+	points := [6]Coord_f64{}
+
+	for i in 0 ..< 6 {
+		px, py := hex_corner(cx, cy, i)
+		points[i] = Coord_f64{px, py}
+	}
+	for i in 0 ..< 6 {
+		j := (i + 1) % 6
+		start := Coord{i32(points[i].x) + x, i32(points[i].y) + y}
+		end := Coord{i32(points[j].x) + x, i32(points[j].y) + y}
+		rl.DrawLine(start.x, start.y, end.x, end.y, rl.WHITE)
+	}
+}
+
+hex_corner :: proc(cx, cy: f64, i: int) -> (f64, f64) {
+	deg: f64 = 60 * f64(i) - 30
+	theta := math.PI / 180 * deg
+	return cx + HEX_SIZE * math.cos_f64(theta), cy + HEX_SIZE * math.sin_f64(theta)
 }
 
 generate_maze :: proc(maze: []Cell) {

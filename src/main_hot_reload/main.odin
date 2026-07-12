@@ -2,10 +2,10 @@ package main
 
 import "core:dynlib"
 import "core:fmt"
-import "core:os"
-import os2 "core:os/os2"
 import "core:log"
 import "core:mem"
+import "core:os"
+import os2 "core:os/os2"
 import "core:time"
 
 when ODIN_OS == .Darwin {
@@ -14,7 +14,7 @@ when ODIN_OS == .Darwin {
 	DLL_EXT :: ".so"
 }
 
-GAME_DLL_DIR  :: "build/hot_reload/"
+GAME_DLL_DIR :: "build/hot_reload/"
 GAME_DLL_PATH :: GAME_DLL_DIR + "game" + DLL_EXT
 
 copy_dll :: proc(to: string) -> bool {
@@ -56,7 +56,7 @@ load_game_api :: proc(api_version: int) -> (api: Game_API, ok: bool) {
 		fmt.printfln("Failed to load symbols: %v", dynlib.last_error())
 	}
 
-	api.api_version       = api_version
+	api.api_version = api_version
 	api.modification_time = mod_time
 	ok = true
 	return
@@ -105,7 +105,7 @@ main :: proc() {
 				if api.memory_size() != new_api.memory_size() {
 					api.shutdown()
 					mem.tracking_allocator_clear(&tracking)
-					for &old in old_apis { unload_game_api(&old) }
+					for &old in old_apis {unload_game_api(&old)}
 					clear(&old_apis)
 					unload_game_api(&api)
 					api = new_api
@@ -128,7 +128,7 @@ main :: proc() {
 		log.errorf("Leaked %v bytes at %v", v.size, v.location)
 	}
 
-	for &old in old_apis { unload_game_api(&old) }
+	for &old in old_apis {unload_game_api(&old)}
 	delete(old_apis)
 	api.shutdown_window()
 	unload_game_api(&api)
