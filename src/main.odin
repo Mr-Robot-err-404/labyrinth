@@ -20,11 +20,29 @@ DIR := [4]Coord{{0, -1}, {1, 0}, {0, 1}, {-1, 0}}
 EXITS := [4]u8{TOP_WALL, RIGHT_WALL, DOWN_WALL, LEFT_WALL}
 START :: Coord{4, 12}
 
+HEX_DIR := [6]Hex_Coord{{1, -1}, {1, 0}, {0, 1}, {-1, 1}, {-1, 0}, {0, -1}}
+LAYERS :: 7
+
+Direction :: enum u8 {
+	NORTH_EAST,
+	EAST,
+	SOUTH_EAST,
+	SOUTH_WEST,
+	WEST,
+	NORTH_WEST,
+}
+Walls :: bit_set[Direction]
+
 Cell :: struct {
 	walls: u8,
 }
+Maze :: map[Hex_Coord]Cell
+
 Coord :: struct {
 	x, y: i32,
+}
+Hex_Coord :: struct {
+	q, r: i32,
 }
 Coord_f64 :: struct {
 	x, y: f64,
@@ -32,16 +50,16 @@ Coord_f64 :: struct {
 
 Game_Memory :: struct {
 	run:  bool,
-	maze: []Cell,
+	maze: Maze,
 }
 g: ^Game_Memory
 
 @(export)
 game_init :: proc() {
 	g = new(Game_Memory)
-	g.maze = make([]Cell, MAZE_WIDTH * MAZE_HEIGHT)
+	g.maze = make(Maze)
 	g.run = true
-	generate_maze(g.maze[:])
+	generate_hex_maze(LAYERS, &g.maze, {0, 0})
 	game_hot_reloaded(g)
 }
 update :: proc() {
@@ -49,11 +67,49 @@ update :: proc() {
 
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
-	// draw_maze(g.maze)
+	draw_hex_maze(g.maze)
 	draw_hex(0, 0)
 	rl.EndDrawing()
 
 	free_all(context.temp_allocator)
+}
+
+generate_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
+	visited := make(map[Hex_Coord]bool)
+	current := make(map[Hex_Coord]bool)
+	next := make(map[Hex_Coord]bool)
+	defer delete(current)
+	defer delete(next)
+	defer delete(visited)
+
+	current[start] = true
+	for c in 0 ..< layers {
+		create_layer(maze, &current, &next, &visited)
+		clear(&current)
+		current, next = next, current
+	}
+}
+
+create_layer :: proc(maze: ^Maze, current, next, visited: ^map[Hex_Coord]bool) {
+	for p in current {
+		maze[p] = Cell{}
+		visited[p] = true
+
+		for dir in HEX_DIR {
+			neighbor := Hex_Coord {
+				q = p.q + dir.q,
+				r = p.r + dir.r,
+			}
+			if ok := visited[neighbor]; ok {continue}
+			next[neighbor] = true
+		}
+	}
+}
+
+draw_hex_maze :: proc(maze: Maze) {
+	for p in maze {
+		draw_hex(p.q, p.r)
+	}
 }
 
 draw_hex :: proc(q, r: i32) {
