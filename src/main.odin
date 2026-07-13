@@ -34,7 +34,7 @@ Direction :: enum u8 {
 Walls :: bit_set[Direction]
 
 HEX_EXITS := [6]Direction{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
-RENDER_ORDER := [6]Direction{.SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST, .NORTH_EAST, .EAST}
+RENDER_ORDER := [6]Direction{.EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST, .NORTH_EAST}
 
 Cell :: struct {
 	walls: Walls,
@@ -57,12 +57,23 @@ Game_Memory :: struct {
 }
 g: ^Game_Memory
 
+main :: proc() {
+	game_init_window()
+	game_init()
+	for game_should_run() {
+		game_update()
+	}
+	game_shutdown()
+	game_shutdown_window()
+}
+
 @(export)
 game_init :: proc() {
+	maze := make(Maze)
+	generate_hex_maze(LAYERS, &maze, {0, 0})
 	g = new(Game_Memory)
-	g.maze = make(Maze)
+	g.maze = maze
 	g.run = true
-	generate_hex_maze(LAYERS, &g.maze, {0, 0})
 	game_hot_reloaded(g)
 }
 update :: proc() {
@@ -70,37 +81,46 @@ update :: proc() {
 
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
-	draw_hex_maze(g.maze)
+	draw_hex_maze(&g.maze)
 	rl.EndDrawing()
 
 	free_all(context.temp_allocator)
 }
 
 generate_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
-	visited := make(map[Hex_Coord]bool)
-	seen := make(map[Hex_Coord]bool)
+	limit := make(map[Hex_Coord]int)
 	current := make(map[Hex_Coord]bool)
 	next := make(map[Hex_Coord]bool)
 	defer delete(current)
 	defer delete(next)
-	defer delete(visited)
-	defer delete(seen)
+	defer delete(limit)
 
 	current[start] = true
 	for c in 0 ..< layers {
-		create_layer(maze, &current, &next, &visited)
+		create_layer(maze, &current, &next)
 		clear(&current)
 		current, next = next, current
 	}
-	walk(0, 0, maze, &seen, Direction.EAST)
+	for coord in maze {
+		c := cells_from_center(coord.q, coord.r)
+		switch {
+		case c == 0:
+			limit[coord] = 3
+		case c <= 2:
+			limit[coord] = 2
+		case c > 2:
+			limit[coord] = 1
+		}
+	}
+	walk(0, 0, maze, &limit, Direction.EAST)
 }
 
-walk :: proc(q, r: i32, maze: ^Maze, visited: ^map[Hex_Coord]bool, entry: Direction) -> bool {
+walk :: proc(q, r: i32, maze: ^Maze, limit: ^map[Hex_Coord]int, entry: Direction) -> bool {
 	coord := Hex_Coord{q, r}
 	if coord not_in maze {return false}
+	if n := limit[coord]; n <= 0 {return false}
 
-	if visited[coord] {return false}
-	visited[coord] = true
+	limit[coord] -= 1
 	remove_wall(coord, maze, entry)
 
 	indices := [6]int{0, 1, 2, 3, 4, 5}
@@ -109,11 +129,17 @@ walk :: proc(q, r: i32, maze: ^Maze, visited: ^map[Hex_Coord]bool, entry: Direct
 	for i in indices {
 		dir := HEX_DIR[i]
 		exit := HEX_EXITS[i]
-		smash := walk(q + dir.q, r + dir.r, maze, visited, inverse_direction(exit))
+		smash := walk(q + dir.q, r + dir.r, maze, limit, inverse_direction(exit))
 		if !smash {continue}
 		remove_wall(coord, maze, exit)
 	}
 	return true
+}
+
+cells_from_center :: proc(q, r: i32) -> i32 {
+	// q + r + s = 0
+	s := -q - r
+	return max(math.abs(q), math.abs(r), math.abs(s))
 }
 
 remove_wall :: proc(coord: Hex_Coord, maze: ^Maze, wall: Direction) {
@@ -123,25 +149,24 @@ remove_wall :: proc(coord: Hex_Coord, maze: ^Maze, wall: Direction) {
 	maze[coord] = cell
 }
 
-create_layer :: proc(maze: ^Maze, current, next, visited: ^map[Hex_Coord]bool) {
+create_layer :: proc(maze: ^Maze, current, next: ^map[Hex_Coord]bool) {
 	for p in current {
+		if _, visited := maze[p]; visited {continue}
+
 		maze[p] = Cell {
 			walls = Walls{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST},
 		}
-		visited[p] = true
-
 		for dir in HEX_DIR {
 			neighbor := Hex_Coord {
 				q = p.q + dir.q,
 				r = p.r + dir.r,
 			}
-			if ok := visited[neighbor]; ok {continue}
 			next[neighbor] = true
 		}
 	}
 }
 
-draw_hex_maze :: proc(maze: Maze) {
+draw_hex_maze :: proc(maze: ^Maze) {
 	for p, cell in maze {
 		draw_hex(p.q, p.r, cell.walls)
 	}
