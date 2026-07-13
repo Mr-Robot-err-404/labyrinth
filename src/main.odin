@@ -1,4 +1,4 @@
-package game
+package main
 
 import "core:math"
 import "core:math/rand"
@@ -51,6 +51,8 @@ Coord_f64 :: struct {
 	x, y: f64,
 }
 
+EDITOR :: #config(EDITOR, false)
+
 Game_Memory :: struct {
 	run:  bool,
 	maze: Maze,
@@ -58,13 +60,17 @@ Game_Memory :: struct {
 g: ^Game_Memory
 
 main :: proc() {
-	game_init_window()
-	game_init()
-	for game_should_run() {
-		game_update()
+	when EDITOR {
+		editor_run()
+	} else {
+		game_init_window()
+		game_init()
+		for game_should_run() {
+			game_update()
+		}
+		game_shutdown()
+		game_shutdown_window()
 	}
-	game_shutdown()
-	game_shutdown_window()
 }
 
 @(export)
