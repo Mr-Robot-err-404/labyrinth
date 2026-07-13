@@ -21,6 +21,7 @@ game_should_run :: proc() -> bool {
 
 @(export)
 game_shutdown :: proc() {
+	delete(g.maze)
 	free(g)
 }
 

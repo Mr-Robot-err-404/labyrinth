@@ -33,8 +33,11 @@ Direction :: enum u8 {
 }
 Walls :: bit_set[Direction]
 
+HEX_EXITS := [6]Direction{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
+RENDER_ORDER := [6]Direction{.SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST, .NORTH_EAST, .EAST}
+
 Cell :: struct {
-	walls: u8,
+	walls: Walls,
 }
 Maze :: map[Hex_Coord]Cell
 
@@ -68,7 +71,6 @@ update :: proc() {
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
 	draw_hex_maze(g.maze)
-	draw_hex(0, 0)
 	rl.EndDrawing()
 
 	free_all(context.temp_allocator)
@@ -76,11 +78,13 @@ update :: proc() {
 
 generate_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
 	visited := make(map[Hex_Coord]bool)
+	seen := make(map[Hex_Coord]bool)
 	current := make(map[Hex_Coord]bool)
 	next := make(map[Hex_Coord]bool)
 	defer delete(current)
 	defer delete(next)
 	defer delete(visited)
+	defer delete(seen)
 
 	current[start] = true
 	for c in 0 ..< layers {
@@ -88,11 +92,42 @@ generate_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
 		clear(&current)
 		current, next = next, current
 	}
+	walk(0, 0, maze, &seen, Direction.EAST)
+}
+
+walk :: proc(q, r: i32, maze: ^Maze, visited: ^map[Hex_Coord]bool, entry: Direction) -> bool {
+	coord := Hex_Coord{q, r}
+	if coord not_in maze {return false}
+
+	if visited[coord] {return false}
+	visited[coord] = true
+	remove_wall(coord, maze, entry)
+
+	indices := [6]int{0, 1, 2, 3, 4, 5}
+	shuffle(&indices)
+
+	for i in indices {
+		dir := HEX_DIR[i]
+		exit := HEX_EXITS[i]
+		smash := walk(q + dir.q, r + dir.r, maze, visited, inverse_direction(exit))
+		if !smash {continue}
+		remove_wall(coord, maze, exit)
+	}
+	return true
+}
+
+remove_wall :: proc(coord: Hex_Coord, maze: ^Maze, wall: Direction) {
+	cell, ok := maze[coord]
+	if !ok {return}
+	cell.walls -= {wall}
+	maze[coord] = cell
 }
 
 create_layer :: proc(maze: ^Maze, current, next, visited: ^map[Hex_Coord]bool) {
 	for p in current {
-		maze[p] = Cell{}
+		maze[p] = Cell {
+			walls = Walls{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST},
+		}
 		visited[p] = true
 
 		for dir in HEX_DIR {
@@ -107,12 +142,12 @@ create_layer :: proc(maze: ^Maze, current, next, visited: ^map[Hex_Coord]bool) {
 }
 
 draw_hex_maze :: proc(maze: Maze) {
-	for p in maze {
-		draw_hex(p.q, p.r)
+	for p, cell in maze {
+		draw_hex(p.q, p.r, cell.walls)
 	}
 }
 
-draw_hex :: proc(q, r: i32) {
+draw_hex :: proc(q, r: i32, walls: Walls) {
 	x, y := i32(WIDTH / 2), i32(HEIGHT / 2)
 	cx := HEX_SIZE * math.sqrt_f64(3) * (f64(q) + f64(r) / 2)
 	cy := HEX_SIZE * 3 / 2 * f64(r)
@@ -124,6 +159,7 @@ draw_hex :: proc(q, r: i32) {
 		points[i] = Coord_f64{px, py}
 	}
 	for i in 0 ..< 6 {
+		if RENDER_ORDER[i] not_in walls {continue}
 		j := (i + 1) % 6
 		start := Coord{i32(points[i].x) + x, i32(points[i].y) + y}
 		end := Coord{i32(points[j].x) + x, i32(points[j].y) + y}
@@ -137,80 +173,37 @@ hex_corner :: proc(cx, cy: f64, i: int) -> (f64, f64) {
 	return cx + HEX_SIZE * math.cos_f64(theta), cy + HEX_SIZE * math.sin_f64(theta)
 }
 
-generate_maze :: proc(maze: []Cell) {
-	visited := make([]bool, MAZE_WIDTH * MAZE_HEIGHT)
-	defer delete(visited)
-	for i in 0 ..< len(maze) {
-		maze[i] = Cell {
-			walls = TOP_WALL | RIGHT_WALL | DOWN_WALL | LEFT_WALL,
-		}
-	}
-	walk(START.x, START.y, maze, visited, 0)
-}
 
-walk :: proc(x, y: i32, maze: []Cell, visited: []bool, entry: u8) -> bool {
-	if out_of_bounds(x, y) {return false}
-	idx := maze_idx(x, y)
-	if visited[idx] {return false}
-
-	visited[idx] = true
-	maze[idx].walls &~= entry
-
-	indices := [4]int{0, 1, 2, 3}
-	shuffle(&indices)
-
-	for i in indices {
-		dir := DIR[i]
-		exit := EXITS[i]
-		smash := walk(x + dir.x, y + dir.y, maze, visited, inverse_direction(exit))
-		if !smash {continue}
-		maze[idx].walls &~= exit
-	}
-	return true
-}
-shuffle :: proc(arr: ^[4]int) {
+shuffle :: proc(arr: ^[6]int) {
 	for i := len(arr) - 1; i > 0; i -= 1 {
 		j := rand.int_max(i + 1)
 		arr[i], arr[j] = arr[j], arr[i]
 	}
 }
-inverse_direction :: proc(wall: u8) -> u8 {
+inverse_direction :: proc(wall: Direction) -> Direction {
 	switch wall {
-	case TOP_WALL:
-		return DOWN_WALL
-	case DOWN_WALL:
-		return TOP_WALL
-	case RIGHT_WALL:
-		return LEFT_WALL
-	case LEFT_WALL:
-		return RIGHT_WALL
+	case .NORTH_EAST:
+		return .SOUTH_WEST
+	case .EAST:
+		return .WEST
+	case .SOUTH_EAST:
+		return .NORTH_WEST
+	case .SOUTH_WEST:
+		return .NORTH_EAST
+	case .WEST:
+		return .EAST
+	case .NORTH_WEST:
+		return .SOUTH_EAST
 	}
-	return 0
+	return Direction.EAST
 }
 
-out_of_bounds :: proc(x, y: i32) -> bool {
-	if x < 0 || y < 0 {return true}
-	if x >= MAZE_WIDTH || y >= MAZE_HEIGHT {return true}
-	return false
+out_of_bounds_hex :: proc(coord: Hex_Coord, maze: ^Maze) -> bool {
+	return coord not_in maze
 }
 
 maze_idx :: proc(x, y: i32) -> i32 {
 	return (y * MAZE_WIDTH) + x
-}
-
-draw_maze :: proc(maze: []Cell) {
-	for y in 0 ..< MAZE_HEIGHT {
-		for x in 0 ..< MAZE_WIDTH {
-			cell := get_cell(x, y, maze)
-			px := f32(x) * CELL_SIZE
-			py := f32(y) * CELL_SIZE
-
-			if is_wall(cell.walls, TOP_WALL) {render_wall(px, py, TOP_WALL)}
-			if is_wall(cell.walls, RIGHT_WALL) {render_wall(px, py, RIGHT_WALL)}
-			if is_wall(cell.walls, DOWN_WALL) {render_wall(px, py, DOWN_WALL)}
-			if is_wall(cell.walls, LEFT_WALL) {render_wall(px, py, LEFT_WALL)}
-		}
-	}
 }
 
 render_wall :: proc(px, py: f32, w: u8) {
@@ -243,16 +236,4 @@ centre :: proc() -> (f32, f32) {
 	total_w := f32(MAZE_WIDTH) * CELL_SIZE
 	total_h := f32(MAZE_HEIGHT) * CELL_SIZE
 	return (f32(WIDTH) - total_w) / 2, (f32(HEIGHT) - total_h) / 2
-}
-
-get_cell :: proc(x, y: i32, maze: []Cell) -> Cell {
-	idx := (y * MAZE_WIDTH) + x
-	return maze[idx]
-}
-
-set_cell :: proc(x, y: i32, walls: u8, maze: []Cell) {
-	idx := (y * MAZE_WIDTH) + x
-	maze[idx] = Cell {
-		walls = walls,
-	}
 }
