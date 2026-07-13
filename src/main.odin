@@ -32,6 +32,7 @@ Direction :: enum u8 {
 	NORTH_WEST,
 }
 Walls :: bit_set[Direction]
+ALL_WALLS :: Walls{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
 
 HEX_EXITS := [6]Direction{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
 RENDER_ORDER := [6]Direction{.EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST, .NORTH_EAST}
@@ -93,13 +94,11 @@ update :: proc() {
 	free_all(context.temp_allocator)
 }
 
-generate_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
-	limit := make(map[Hex_Coord]int)
+fill_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
 	current := make(map[Hex_Coord]bool)
 	next := make(map[Hex_Coord]bool)
 	defer delete(current)
 	defer delete(next)
-	defer delete(limit)
 
 	current[start] = true
 	for c in 0 ..< layers {
@@ -107,6 +106,14 @@ generate_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
 		clear(&current)
 		current, next = next, current
 	}
+}
+
+generate_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
+	fill_hex_maze(layers, maze, start)
+
+	limit := make(map[Hex_Coord]int)
+	defer delete(limit)
+
 	for coord in maze {
 		c := cells_from_center(coord.q, coord.r)
 		switch {
@@ -174,11 +181,11 @@ create_layer :: proc(maze: ^Maze, current, next: ^map[Hex_Coord]bool) {
 
 draw_hex_maze :: proc(maze: ^Maze) {
 	for p, cell in maze {
-		draw_hex(p.q, p.r, cell.walls)
+		draw_hex(p.q, p.r, cell.walls, rl.WHITE)
 	}
 }
 
-draw_hex :: proc(q, r: i32, walls: Walls) {
+draw_hex :: proc(q, r: i32, walls: Walls, color: rl.Color) {
 	x, y := i32(WIDTH / 2), i32(HEIGHT / 2)
 	cx := HEX_SIZE * math.sqrt_f64(3) * (f64(q) + f64(r) / 2)
 	cy := HEX_SIZE * 3 / 2 * f64(r)
@@ -194,7 +201,7 @@ draw_hex :: proc(q, r: i32, walls: Walls) {
 		j := (i + 1) % 6
 		start := Coord{i32(points[i].x) + x, i32(points[i].y) + y}
 		end := Coord{i32(points[j].x) + x, i32(points[j].y) + y}
-		rl.DrawLine(start.x, start.y, end.x, end.y, rl.WHITE)
+		rl.DrawLine(start.x, start.y, end.x, end.y, color)
 	}
 }
 
