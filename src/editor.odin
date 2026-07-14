@@ -4,12 +4,13 @@ import "core:math"
 import rl "vendor:raylib"
 
 editor_run :: proc() {
-	active: Hex_Coord
 	ghost := make(Maze)
 	created := make(Maze)
 	defer delete(ghost)
 	defer delete(created)
 	setup_editor(&ghost, &created)
+
+	buf: Maybe(Hex_Coord)
 
 	rl.InitWindow(WIDTH, HEIGHT, "labyrinth - editor")
 	rl.SetTargetFPS(60)
@@ -21,37 +22,51 @@ editor_run :: proc() {
 		rl.ClearBackground(rl.BLACK)
 		switch {
 		case rl.IsMouseButtonPressed(.LEFT):
+			buf = nil
 			pos := rl.GetMousePosition()
 			coord := pixel_to_hex(pos.x, pos.y)
-			active = coord
 			toggle_coord(coord, &created)
+		case rl.IsMouseButtonPressed(.RIGHT):
+			pos := rl.GetMousePosition()
+			coord := pixel_to_hex(pos.x, pos.y)
+			passage(coord, &created, &buf)
 		case rl.IsKeyPressed(.COMMA):
+			buf = nil
 			clear(&created)
 			created[Hex_Coord{0, 0}] = Cell{ALL_WALLS}
-		case rl.IsKeyPressed(.U):
-			toggle_wall(active, &created, .NORTH_EAST)
-		case rl.IsKeyPressed(.J):
-			toggle_wall(active, &created, .EAST)
-		case rl.IsKeyPressed(.N):
-			toggle_wall(active, &created, .SOUTH_EAST)
-		case rl.IsKeyPressed(.V):
-			toggle_wall(active, &created, .SOUTH_WEST)
-		case rl.IsKeyPressed(.F):
-			toggle_wall(active, &created, .WEST)
-		case rl.IsKeyPressed(.R):
-			toggle_wall(active, &created, .NORTH_WEST)
 		}
 		draw_ghost_maze(&ghost)
-		draw_created_cells(&created)
+		draw_created_cells(&created, buf)
 		rl.EndDrawing()
 	}
 }
 
-toggle_walls :: proc(coord: Hex_Coord, m: ^Maze, wall: Direction) {
-	toggle_wall(coord, m, wall)
-	neighbor := Hex_Coord{}
+passage :: proc(b: Hex_Coord, m: ^Maze, buf: ^Maybe(Hex_Coord)) {
+	a, okay := buf^.?
+
+	if !okay {
+		buf^ = b
+		return
+	}
+	buf^ = nil
+
+	dir, found := is_neighbor(a, b)
+	if !found {return}
+	toggle_wall(a, m, dir)
+	toggle_wall(b, m, inverse_direction(dir))
 }
 
+is_neighbor :: proc(a, b: Hex_Coord) -> (Direction, bool) {
+	v := hex_vector(a, b)
+	for mv, dir in MOVE {
+		if mv == v {return dir, true}
+	}
+	return .EAST, false
+}
+
+hex_vector :: proc(a, b: Hex_Coord) -> Hex_Coord {
+	return Hex_Coord{b.q - a.q, b.r - a.r}
+}
 toggle_wall :: proc(coord: Hex_Coord, m: ^Maze, wall: Direction) {
 	cell, ok := m[coord]
 	if !ok {return}
@@ -100,8 +115,12 @@ draw_ghost_maze :: proc(maze: ^Maze) {
 	}
 }
 
-draw_created_cells :: proc(maze: ^Maze) {
+draw_created_cells :: proc(maze: ^Maze, buf: Maybe(Hex_Coord)) {
 	for p, cell in maze {
+		if p == buf {
+			draw_hex(p.q, p.r, cell.walls, rl.BLUE)
+			continue
+		}
 		draw_hex(p.q, p.r, cell.walls, rl.WHITE)
 	}
 }

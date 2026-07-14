@@ -16,13 +16,6 @@ RIGHT_WALL: u8 : 1 << 2
 DOWN_WALL: u8 : 1 << 1
 LEFT_WALL: u8 : 1 << 0
 
-DIR := [4]Coord{{0, -1}, {1, 0}, {0, 1}, {-1, 0}}
-EXITS := [4]u8{TOP_WALL, RIGHT_WALL, DOWN_WALL, LEFT_WALL}
-START :: Coord{4, 12}
-
-HEX_DIR := [6]Hex_Coord{{1, -1}, {1, 0}, {0, 1}, {-1, 1}, {-1, 0}, {0, -1}}
-LAYERS :: 7
-
 Direction :: enum u8 {
 	NORTH_EAST,
 	EAST,
@@ -31,8 +24,31 @@ Direction :: enum u8 {
 	WEST,
 	NORTH_WEST,
 }
+MOVE := [Direction]Hex_Coord {
+	.NORTH_EAST = {1, -1},
+	.EAST       = {1, 0},
+	.SOUTH_EAST = {0, 1},
+	.SOUTH_WEST = {-1, 1},
+	.WEST       = {-1, 0},
+	.NORTH_WEST = {0, -1},
+}
+
 Walls :: bit_set[Direction]
 ALL_WALLS :: Walls{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
+
+DIR := [4]Coord{{0, -1}, {1, 0}, {0, 1}, {-1, 0}}
+EXITS := [4]u8{TOP_WALL, RIGHT_WALL, DOWN_WALL, LEFT_WALL}
+START :: Coord{4, 12}
+
+HEX_DIR := [6]Hex_Coord {
+	MOVE[.NORTH_EAST],
+	MOVE[.EAST],
+	MOVE[.SOUTH_EAST],
+	MOVE[.SOUTH_WEST],
+	MOVE[.WEST],
+	MOVE[.NORTH_WEST],
+}
+LAYERS :: 7
 
 HEX_EXITS := [6]Direction{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
 RENDER_ORDER := [6]Direction{.EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST, .NORTH_EAST}
