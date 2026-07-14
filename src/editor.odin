@@ -81,11 +81,22 @@ toggle_wall :: proc(coord: Hex_Coord, m: ^Maze, wall: Direction) {
 
 toggle_coord :: proc(coord: Hex_Coord, m: ^Maze) {
 	_, ok := m[coord]
-	if !ok {
-		m[coord] = Cell{ALL_WALLS}
+	if ok {
+		delete_key(m, coord)
 		return
 	}
-	delete_key(m, coord)
+	walls := ALL_WALLS
+
+	for i in 0 ..< len(HEX_DIR) {
+		dir := HEX_DIR[i]
+		exit := HEX_EXITS[i]
+		neighbor := Hex_Coord{coord.q + dir.q, coord.r + dir.r}
+		cell, ok := m[neighbor]
+		if !ok {continue}
+		if inverse_direction(exit) in cell.walls {continue}
+		walls -= {exit}
+	}
+	m[coord] = Cell{walls}
 }
 
 pixel_to_hex :: proc(px, py: f32) -> Hex_Coord {
