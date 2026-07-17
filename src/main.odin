@@ -1,5 +1,6 @@
 package main
 
+import "core:fmt"
 import "core:math"
 import "core:math/rand"
 import rl "vendor:raylib"
@@ -71,8 +72,10 @@ Coord_f64 :: struct {
 EDITOR :: #config(EDITOR, false)
 
 Game_Memory :: struct {
-	run:  bool,
-	maze: Maze,
+	run:      bool,
+	maze:     Maze,
+	assets:   map[string]Hex_Asset,
+	occupied: map[Hex_Coord]string,
 }
 g: ^Game_Memory
 
@@ -93,9 +96,19 @@ main :: proc() {
 @(export)
 game_init :: proc() {
 	maze := make(Maze)
-	generate_hex_maze(LAYERS, &maze, {0, 0})
+	assets := make(map[string]Hex_Asset)
+	occupied := make(map[Hex_Coord]string)
+
+	parse_hex_assets("src/assets/hex.txt", &assets)
+	generate_hex_maze(LAYERS, &maze, &occupied, assets, {0, 0})
+
+	for tag, asset in assets {
+		log_asset(tag, asset)
+	}
 	g = new(Game_Memory)
 	g.maze = maze
+	g.assets = assets
+	g.occupied = occupied
 	g.run = true
 	game_hot_reloaded(g)
 }
@@ -104,7 +117,8 @@ update :: proc() {
 
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
-	draw_hex_maze(&g.maze)
+	draw_hex_maze(&g.maze, &g.occupied)
+	draw_assets(&g.maze, &g.occupied)
 	rl.EndDrawing()
 
 	free_all(context.temp_allocator)
@@ -124,23 +138,78 @@ fill_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
 	}
 }
 
-generate_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
-	fill_hex_maze(layers, maze, start)
+place_hex_assets :: proc(
+	maze: ^Maze,
+	occupied: ^map[Hex_Coord]string,
+	limit: ^map[Hex_Coord]int,
+	assets: map[string]Hex_Asset,
+	start_layer: i32,
+	end_layer: i32,
+) {
+	for tag, ass in assets {
+		candidates := make([dynamic]Hex_Coord, context.temp_allocator)
+		defer delete(candidates)
 
+		for coord in maze {
+			region := cells_from_center(coord.q, coord.r)
+			if region < start_layer || region >= end_layer {continue}
+			if coord in occupied {continue}
+			append(&candidates, coord)
+		}
+		if len(candidates) == 0 {continue}
+		rand.shuffle(candidates[:])
+
+		for i in 0 ..< len(candidates) {
+			offset := candidates[i]
+
+			if !is_space_available(ass, offset, maze, occupied) {
+				fmt.println("space not available")
+				continue
+			}
+			for pos, cell in ass {
+				coord := asset_to_maze_coord(pos, offset)
+				occupied[coord] = tag
+				maze[coord] = cell
+				limit[coord] = 0
+			}
+			break
+		}
+	}
+}
+
+is_space_available :: proc(
+	asset: map[Hex_Coord]Cell,
+	offset: Hex_Coord,
+	maze: ^Maze,
+	occupied: ^map[Hex_Coord]string,
+) -> bool {
+	for p in asset {
+		coord := asset_to_maze_coord(p, offset)
+		if coord not_in maze {return false}
+		if coord in occupied {return false}
+	}
+	return true
+}
+
+asset_to_maze_coord :: proc(coord: Hex_Coord, offset: Hex_Coord) -> Hex_Coord {
+	return Hex_Coord{coord.q + offset.q, coord.r + offset.r}
+}
+
+generate_hex_maze :: proc(
+	layers: int,
+	maze: ^Maze,
+	occupied: ^map[Hex_Coord]string,
+	assets: map[string]Hex_Asset,
+	start: Hex_Coord,
+) {
 	limit := make(map[Hex_Coord]int)
 	defer delete(limit)
 
+	fill_hex_maze(layers, maze, start)
 	for coord in maze {
-		c := cells_from_center(coord.q, coord.r)
-		switch {
-		case c == 0:
-			limit[coord] = 3
-		case c <= 2:
-			limit[coord] = 2
-		case c > 2:
-			limit[coord] = 1
-		}
+		limit[coord] = 1
 	}
+	place_hex_assets(maze, occupied, &limit, assets, 0, LAYERS)
 	walk(0, 0, maze, &limit, Direction.EAST)
 }
 
@@ -195,8 +264,17 @@ create_layer :: proc(maze: ^Maze, current, next: ^map[Hex_Coord]bool) {
 	}
 }
 
-draw_hex_maze :: proc(maze: ^Maze) {
+draw_assets :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) {
+	for p, tag in occupied {
+		cell, ok := maze[p]
+		if !ok {panic("asset cell not found in maze")}
+		draw_hex(p.q, p.r, cell.walls, rl.BLUE)
+	}
+}
+
+draw_hex_maze :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) {
 	for p, cell in maze {
+		if p in occupied {continue}
 		draw_hex(p.q, p.r, cell.walls, rl.WHITE)
 	}
 }
