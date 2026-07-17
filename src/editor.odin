@@ -1,44 +1,58 @@
 package main
 
 import "core:math"
+import "core:os"
+import "core:time"
 import rl "vendor:raylib"
 
 editor_run :: proc() {
+	if len(os.args) < 2 {
+		panic("usage: editor <tag>")
+	}
+	tag := os.args[1]
 	ghost := make(Maze)
-	created := make(Maze)
+	asset := make(Maze)
 	defer delete(ghost)
-	defer delete(created)
-	setup_editor(&ghost, &created)
+	defer delete(asset)
+	setup_editor(&ghost, &asset)
 
 	buf: Maybe(Hex_Coord)
+	done := false
 
 	rl.InitWindow(WIDTH, HEIGHT, "labyrinth - editor")
 	rl.SetTargetFPS(60)
 	rl.SetExitKey(.ESCAPE)
 	defer rl.CloseWindow()
 
-	for !rl.WindowShouldClose() {
+	for !rl.WindowShouldClose() && !done {
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.BLACK)
 		switch {
+		case rl.IsKeyPressed(.ENTER):
+			save_hex_asset("src/assets/hex.txt", asset, tag)
+			rl.ClearBackground(rl.BLACK)
+			rl.DrawText("saved asset!", WIDTH / 2 - 30, HEIGHT / 2, 20, rl.GREEN)
+			done = true
+
 		case rl.IsMouseButtonPressed(.LEFT):
 			buf = nil
 			pos := rl.GetMousePosition()
 			coord := pixel_to_hex(pos.x, pos.y)
-			toggle_coord(coord, &created)
+			toggle_coord(coord, &asset)
 		case rl.IsMouseButtonPressed(.RIGHT):
 			pos := rl.GetMousePosition()
 			coord := pixel_to_hex(pos.x, pos.y)
-			passage(coord, &created, &buf)
+			passage(coord, &asset, &buf)
 		case rl.IsKeyPressed(.COMMA):
 			buf = nil
-			clear(&created)
-			created[Hex_Coord{0, 0}] = Cell{ALL_WALLS}
+			clear(&asset)
+			asset[Hex_Coord{0, 0}] = Cell{ALL_WALLS}
 		}
 		draw_ghost_maze(&ghost)
-		draw_created_cells(&created, buf)
+		draw_asset_cells(&asset, buf)
 		rl.EndDrawing()
 	}
+	time.sleep(time.Second)
 }
 
 passage :: proc(b: Hex_Coord, m: ^Maze, buf: ^Maybe(Hex_Coord)) {
@@ -126,7 +140,7 @@ draw_ghost_maze :: proc(maze: ^Maze) {
 	}
 }
 
-draw_created_cells :: proc(maze: ^Maze, buf: Maybe(Hex_Coord)) {
+draw_asset_cells :: proc(maze: ^Maze, buf: Maybe(Hex_Coord)) {
 	for p, cell in maze {
 		if p == buf {
 			draw_hex(p.q, p.r, cell.walls, rl.BLUE)
@@ -136,8 +150,8 @@ draw_created_cells :: proc(maze: ^Maze, buf: Maybe(Hex_Coord)) {
 	}
 }
 
-setup_editor :: proc(maze: ^Maze, created: ^Maze) {
+setup_editor :: proc(maze: ^Maze, asset: ^Maze) {
 	start := Hex_Coord{0, 0}
 	fill_hex_maze(LAYERS, maze, start)
-	created[start] = Cell{ALL_WALLS}
+	asset[start] = Cell{ALL_WALLS}
 }

@@ -1,5 +1,6 @@
 package main
 
+import "core:fmt"
 import "core:os"
 import "core:strconv"
 import "core:strings"
@@ -7,6 +8,33 @@ import "core:strings"
 Hex_Asset :: map[Hex_Coord]Cell
 
 WALL_STR := [6]string{"NORTH_EAST", "EAST", "SOUTH_EAST", "SOUTH_WEST", "WEST", "NORTH_WEST"}
+
+save_hex_asset :: proc(filename: string, asset: Hex_Asset, tag: string) {
+	b := strings.builder_make(context.temp_allocator)
+	strings.write_string(&b, fmt.tprintf("\n\n#%s\n", tag))
+
+	for coord, cell in asset {
+		strings.write_string(&b, fmt.tprintf("%d,%d::", coord.q, coord.r))
+
+		for i in 0 ..< 6 {
+			str := WALL_STR[i]
+			wall := HEX_EXITS[i]
+			if wall in cell.walls {
+				strings.write_string(&b, fmt.tprintf("%s|", str))
+			}
+		}
+		strings.write_string(&b, "\n")
+	}
+	result := strings.trim_suffix(strings.to_string(b), "\n")
+
+	f, err := os.open(filename, os.O_WRONLY | os.O_APPEND | os.O_CREATE, 0o644)
+	if err != os.ERROR_NONE {panic("failed to open asset file")}
+	defer os.close(f)
+
+	_, err = os.write_string(f, result)
+	if err != os.ERROR_NONE {panic("failed to save new asset")}
+	fmt.println("saved asset: ", tag)
+}
 
 parse_hex_assets :: proc(filename: string, assets: ^map[string]Hex_Asset) {
 	data, ok := os.read_entire_file(filename)

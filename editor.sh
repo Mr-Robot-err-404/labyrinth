@@ -7,4 +7,4 @@ mkdir -p build
 
 odin build src -out:$EXE -debug -define:EDITOR=true
 
-./$EXE
+./$EXE "$@"
