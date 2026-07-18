@@ -5,17 +5,9 @@ import "core:math"
 import "core:math/rand"
 import rl "vendor:raylib"
 
-MAZE_WIDTH: i32 : 20
-MAZE_HEIGHT: i32 : 20
-CELL_SIZE: f32 : 30
 HEX_SIZE: f64 : 30
 WIDTH: i32 : 800
 HEIGHT: i32 : 800
-
-TOP_WALL: u8 : 1 << 3
-RIGHT_WALL: u8 : 1 << 2
-DOWN_WALL: u8 : 1 << 1
-LEFT_WALL: u8 : 1 << 0
 
 Direction :: enum u8 {
 	NORTH_EAST,
@@ -37,9 +29,6 @@ MOVE := [Direction]Hex_Coord {
 Walls :: bit_set[Direction]
 ALL_WALLS :: Walls{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
 
-DIR := [4]Coord{{0, -1}, {1, 0}, {0, 1}, {-1, 0}}
-EXITS := [4]u8{TOP_WALL, RIGHT_WALL, DOWN_WALL, LEFT_WALL}
-START :: Coord{4, 12}
 
 HEX_DIR := [6]Hex_Coord {
 	MOVE[.NORTH_EAST],
@@ -342,42 +331,4 @@ inverse_direction :: proc(wall: Direction) -> Direction {
 	return Direction.EAST
 }
 
-out_of_bounds_hex :: proc(coord: Hex_Coord, maze: ^Maze) -> bool {
-	return coord not_in maze
-}
 
-maze_idx :: proc(x, y: i32) -> i32 {
-	return (y * MAZE_WIDTH) + x
-}
-
-render_wall :: proc(px, py: f32, w: u8) {
-	ox, oy := centre()
-	switch w {
-	case TOP_WALL:
-		rl.DrawLineV({px + ox, py + oy}, {px + CELL_SIZE + ox, py + oy}, rl.BLUE)
-	case RIGHT_WALL:
-		rl.DrawLineV(
-			{px + CELL_SIZE + ox, py + oy},
-			{px + CELL_SIZE + ox, py + CELL_SIZE + oy},
-			rl.BLUE,
-		)
-	case DOWN_WALL:
-		rl.DrawLineV(
-			{px + ox, py + CELL_SIZE + oy},
-			{px + CELL_SIZE + ox, py + CELL_SIZE + oy},
-			rl.BLUE,
-		)
-	case LEFT_WALL:
-		rl.DrawLineV({px + ox, py + oy}, {px + ox, py + CELL_SIZE + oy}, rl.BLUE)
-	}
-}
-
-is_wall :: proc(walls: u8, side: u8) -> bool {
-	return walls & side != 0
-}
-
-centre :: proc() -> (f32, f32) {
-	total_w := f32(MAZE_WIDTH) * CELL_SIZE
-	total_h := f32(MAZE_HEIGHT) * CELL_SIZE
-	return (f32(WIDTH) - total_w) / 2, (f32(HEIGHT) - total_h) / 2
-}
