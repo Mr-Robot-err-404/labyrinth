@@ -171,6 +171,18 @@ place_hex_assets :: proc(
 				occupied[coord] = tag
 				maze[coord] = cell
 				limit[coord] = 0
+
+				for i in 0 ..< len(HEX_DIR) {
+					dir := HEX_DIR[i]
+					wall := HEX_EXITS[i]
+					if wall in cell.walls {continue}
+					neighbor := Hex_Coord{coord.q + dir.q, coord.r + dir.r}
+
+					if hex, ok := maze[neighbor]; ok && inverse_direction(wall) in hex.walls {
+						hex.walls -= {inverse_direction(wall)}
+						maze[neighbor] = hex
+					}
+				}
 			}
 			break
 		}
