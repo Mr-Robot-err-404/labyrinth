@@ -330,5 +330,3 @@ inverse_direction :: proc(wall: Direction) -> Direction {
 	}
 	return Direction.EAST
 }
-
-
