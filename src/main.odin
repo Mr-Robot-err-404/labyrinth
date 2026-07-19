@@ -29,7 +29,6 @@ MOVE := [Direction]Hex_Coord {
 Walls :: bit_set[Direction]
 ALL_WALLS :: Walls{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
 
-
 HEX_DIR := [6]Hex_Coord {
 	MOVE[.NORTH_EAST],
 	MOVE[.EAST],
@@ -39,8 +38,8 @@ HEX_DIR := [6]Hex_Coord {
 	MOVE[.NORTH_WEST],
 }
 LAYERS :: 10
-MAX_DENSITY: f32 : 0.7
-DECAY: f32 : 0.8
+DENSITY_STEP: f32 : 0.02
+DECAY_STEP: f32 : 0.02
 
 HEX_EXITS := [6]Direction{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
 RENDER_ORDER := [6]Direction{.EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST, .NORTH_EAST}
@@ -63,10 +62,12 @@ Coord_f64 :: struct {
 EDITOR :: #config(EDITOR, false)
 
 Game_Memory :: struct {
-	run:      bool,
-	maze:     Maze,
-	assets:   map[string]Hex_Asset,
-	occupied: map[Hex_Coord]string,
+	run:         bool,
+	maze:        Maze,
+	assets:      map[string]Hex_Asset,
+	occupied:    map[Hex_Coord]string,
+	max_density: f32,
+	decay:       f32,
 }
 g: ^Game_Memory
 
@@ -86,33 +87,74 @@ main :: proc() {
 
 @(export)
 game_init :: proc() {
-	maze := make(Maze)
-	assets := make(map[string]Hex_Asset)
-	occupied := make(map[Hex_Coord]string)
-
-	parse_hex_assets("src/assets/hex.txt", &assets)
-	generate_hex_maze(LAYERS, &maze, &occupied, assets, {0, 0})
-
-	for tag, asset in assets {
-		log_asset(tag, asset)
-	}
 	g = new(Game_Memory)
-	g.maze = maze
-	g.assets = assets
-	g.occupied = occupied
+	g.max_density = 0.5
+	g.decay = 0.7
 	g.run = true
+
+	assets := make(map[string]Hex_Asset)
+	parse_hex_assets("src/assets/hex.txt", &assets)
+	g.assets = assets
+
+	regen(g)
 	game_hot_reloaded(g)
 }
+
+regen :: proc(g: ^Game_Memory) {
+	delete(g.maze)
+	delete(g.occupied)
+	g.maze = make(Maze)
+	g.occupied = make(map[Hex_Coord]string)
+	generate_hex_maze(LAYERS, &g.maze, &g.occupied, g.assets, {0, 0}, g.max_density, g.decay)
+}
+
 update :: proc() {
 	if rl.IsKeyPressed(.ESCAPE) {g.run = false}
+
+	dirty := false
+	if rl.IsKeyPressed(.UP) {g.max_density = min(g.max_density + DENSITY_STEP, 1.0); dirty = true}
+	if rl.IsKeyPressed(
+		.DOWN,
+	) {g.max_density = max(g.max_density - DENSITY_STEP, 0.0); dirty = true}
+	if rl.IsKeyPressed(.RIGHT) {g.decay = min(g.decay + DECAY_STEP, 1.0); dirty = true}
+	if rl.IsKeyPressed(.LEFT) {g.decay = max(g.decay - DECAY_STEP, 0.0); dirty = true}
+	if dirty {regen(g)}
 
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
 	draw_hex_maze(&g.maze, &g.occupied)
 	draw_assets(&g.maze, &g.occupied)
+	draw_debug_overlay()
 	rl.EndDrawing()
 
 	free_all(context.temp_allocator)
+}
+
+draw_debug_overlay :: proc() {
+	pad :: i32(12)
+	line :: i32(20)
+	y := pad
+
+	rl.DrawText(
+		fmt.ctprintf("max_density: %.2f  [UP/DOWN]", g.max_density),
+		pad,
+		y,
+		18,
+		rl.YELLOW,
+	); y += line
+	rl.DrawText(
+		fmt.ctprintf("decay:       %.2f  [LEFT/RIGHT]", g.decay),
+		pad,
+		y,
+		18,
+		rl.YELLOW,
+	); y += line
+	y += 6
+	for i in 0 ..< LAYERS {
+		d := layer_density(i32(i), g.max_density, g.decay)
+		rl.DrawText(fmt.ctprintf("  layer %d: %.3f", i, d), pad, y, 16, rl.GRAY)
+		y += line
+	}
 }
 
 fill_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
@@ -129,12 +171,12 @@ fill_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
 	}
 }
 
-break_walls :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) {
+break_walls :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string, max_density: f32, decay: f32) {
 	visited := make(map[Hex_Coord]bool)
 	defer delete(visited)
 
 	for coord, cell in maze {
-		if _, ok := occupied[coord]; ok {continue}
+		if coord in occupied {continue}
 		visited[coord] = true
 
 		layer := cells_from_center(coord.q, coord.r)
@@ -144,10 +186,10 @@ break_walls :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) {
 			if wall not_in cell.walls {continue}
 
 			neighbor := Hex_Coord{coord.q + dir.q, coord.r + dir.r}
-			if _, ok := occupied[neighbor]; ok {continue}
-			if _, ok := maze[neighbor]; !ok {continue}
+			if neighbor in occupied {continue}
+			if neighbor not_in maze {continue}
 			if visited[neighbor] {continue}
-			if !should_break_wall(cell, maze[neighbor], layer) {continue}
+			if rand.float32() >= layer_density(layer, max_density, decay) {continue}
 
 			remove_wall(coord, maze, wall)
 			remove_wall(neighbor, maze, inverse_direction(wall))
@@ -155,17 +197,8 @@ break_walls :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) {
 	}
 }
 
-should_break_wall :: proc(cell: Cell, neighbor: Cell, layer: i32) -> bool {
-	return rand.float32() < exponential_layer_density(layer)
-}
-
-exponential_layer_density :: proc(layer: i32) -> f32 {
-	return MAX_DENSITY * math.pow_f32(DECAY, f32(layer))
-}
-
-linear_layer_density :: proc(layer: i32) -> f32 {
-	max_density :: f32(0.4)
-	return max_density * (1.0 - f32(layer) / f32(LAYERS))
+layer_density :: proc(layer: i32, max_density: f32, decay: f32) -> f32 {
+	return max_density * math.pow_f32(decay, f32(layer))
 }
 
 place_hex_assets :: proc(
@@ -192,10 +225,7 @@ place_hex_assets :: proc(
 		for i in 0 ..< len(candidates) {
 			offset := candidates[i]
 
-			if !is_space_available(ass, offset, maze, occupied) {
-				fmt.println("space not available")
-				continue
-			}
+			if !is_space_available(ass, offset, maze, occupied) {continue}
 			for pos, cell in ass {
 				coord := asset_to_maze_coord(pos, offset)
 				occupied[coord] = tag
@@ -243,6 +273,8 @@ generate_hex_maze :: proc(
 	occupied: ^map[Hex_Coord]string,
 	assets: map[string]Hex_Asset,
 	start: Hex_Coord,
+	max_density: f32,
+	decay: f32,
 ) {
 	limit := make(map[Hex_Coord]int)
 	defer delete(limit)
@@ -252,8 +284,9 @@ generate_hex_maze :: proc(
 		limit[coord] = 1
 	}
 	place_hex_assets(maze, occupied, &limit, assets, 0, LAYERS)
-	walk(0, 0, maze, &limit, Direction.EAST)
-	break_walls(maze, occupied)
+	start := starting_point(maze, occupied)
+	walk(start.q, start.r, maze, &limit, Direction.EAST)
+	break_walls(maze, occupied, max_density, decay)
 }
 
 walk :: proc(q, r: i32, maze: ^Maze, limit: ^map[Hex_Coord]int, entry: Direction) -> bool {
@@ -277,8 +310,15 @@ walk :: proc(q, r: i32, maze: ^Maze, limit: ^map[Hex_Coord]int, entry: Direction
 	return true
 }
 
+starting_point :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) -> Hex_Coord {
+	for coord in maze {
+		if coord in occupied {continue}
+		return coord
+	}
+	panic("nope")
+}
+
 cells_from_center :: proc(q, r: i32) -> i32 {
-	// q + r + s = 0
 	s := -q - r
 	return max(math.abs(q), math.abs(r), math.abs(s))
 }
@@ -295,7 +335,7 @@ create_layer :: proc(maze: ^Maze, current, next: ^map[Hex_Coord]bool) {
 		if _, visited := maze[p]; visited {continue}
 
 		maze[p] = Cell {
-			walls = Walls{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST},
+			walls = ALL_WALLS,
 		}
 		for dir in HEX_DIR {
 			neighbor := Hex_Coord {
@@ -308,7 +348,7 @@ create_layer :: proc(maze: ^Maze, current, next: ^map[Hex_Coord]bool) {
 }
 
 draw_assets :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) {
-	for p, tag in occupied {
+	for p in occupied {
 		cell, ok := maze[p]
 		if !ok {panic("asset cell not found in maze")}
 		draw_hex(p.q, p.r, cell.walls, rl.BLUE)
@@ -328,7 +368,6 @@ draw_hex :: proc(q, r: i32, walls: Walls, color: rl.Color) {
 	cy := HEX_SIZE * 3 / 2 * f64(r)
 
 	points := [6]Coord_f64{}
-
 	for i in 0 ..< 6 {
 		px, py := hex_corner(cx, cy, i)
 		points[i] = Coord_f64{px, py}
@@ -348,13 +387,13 @@ hex_corner :: proc(cx, cy: f64, i: int) -> (f64, f64) {
 	return cx + HEX_SIZE * math.cos_f64(theta), cy + HEX_SIZE * math.sin_f64(theta)
 }
 
-
 shuffle :: proc(arr: ^[6]int) {
 	for i := len(arr) - 1; i > 0; i -= 1 {
 		j := rand.int_max(i + 1)
 		arr[i], arr[j] = arr[j], arr[i]
 	}
 }
+
 inverse_direction :: proc(wall: Direction) -> Direction {
 	switch wall {
 	case .NORTH_EAST:
@@ -370,5 +409,5 @@ inverse_direction :: proc(wall: Direction) -> Direction {
 	case .NORTH_WEST:
 		return .SOUTH_EAST
 	}
-	return Direction.EAST
+	return .EAST
 }
