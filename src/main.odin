@@ -6,8 +6,8 @@ import "core:math/rand"
 import rl "vendor:raylib"
 
 HEX_SIZE: f64 : 30
-WIDTH: i32 : 800
-HEIGHT: i32 : 800
+WIDTH: i32 : 1920
+HEIGHT: i32 : 1080
 
 Direction :: enum u8 {
 	NORTH_EAST,
@@ -38,7 +38,9 @@ HEX_DIR := [6]Hex_Coord {
 	MOVE[.WEST],
 	MOVE[.NORTH_WEST],
 }
-LAYERS :: 7
+LAYERS :: 10
+MAX_DENSITY: f32 : 0.7
+DECAY: f32 : 0.8
 
 HEX_EXITS := [6]Direction{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
 RENDER_ORDER := [6]Direction{.EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST, .NORTH_EAST}
@@ -127,6 +129,45 @@ fill_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
 	}
 }
 
+break_walls :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) {
+	visited := make(map[Hex_Coord]bool)
+	defer delete(visited)
+
+	for coord, cell in maze {
+		if _, ok := occupied[coord]; ok {continue}
+		visited[coord] = true
+
+		layer := cells_from_center(coord.q, coord.r)
+		for i in 0 ..< 6 {
+			wall := HEX_EXITS[i]
+			dir := HEX_DIR[i]
+			if wall not_in cell.walls {continue}
+
+			neighbor := Hex_Coord{coord.q + dir.q, coord.r + dir.r}
+			if _, ok := occupied[neighbor]; ok {continue}
+			if _, ok := maze[neighbor]; !ok {continue}
+			if visited[neighbor] {continue}
+			if !should_break_wall(cell, maze[neighbor], layer) {continue}
+
+			remove_wall(coord, maze, wall)
+			remove_wall(neighbor, maze, inverse_direction(wall))
+		}
+	}
+}
+
+should_break_wall :: proc(cell: Cell, neighbor: Cell, layer: i32) -> bool {
+	return rand.float32() < exponential_layer_density(layer)
+}
+
+exponential_layer_density :: proc(layer: i32) -> f32 {
+	return MAX_DENSITY * math.pow_f32(DECAY, f32(layer))
+}
+
+linear_layer_density :: proc(layer: i32) -> f32 {
+	max_density :: f32(0.4)
+	return max_density * (1.0 - f32(layer) / f32(LAYERS))
+}
+
 place_hex_assets :: proc(
 	maze: ^Maze,
 	occupied: ^map[Hex_Coord]string,
@@ -212,6 +253,7 @@ generate_hex_maze :: proc(
 	}
 	place_hex_assets(maze, occupied, &limit, assets, 0, LAYERS)
 	walk(0, 0, maze, &limit, Direction.EAST)
+	break_walls(maze, occupied)
 }
 
 walk :: proc(q, r: i32, maze: ^Maze, limit: ^map[Hex_Coord]int, entry: Direction) -> bool {
