@@ -136,17 +136,17 @@ hex_round :: proc(q, r: f64) -> Hex_Coord {
 
 draw_ghost_maze :: proc(maze: ^Maze) {
 	for p, cell in maze {
-		draw_hex(p.q, p.r, cell.walls, rl.Color{40, 40, 40, 255})
+		draw_hex(p.q, p.r, cell.walls, rl.Color{40, 40, 40, 255}, nil)
 	}
 }
 
 draw_asset_cells :: proc(maze: ^Maze, buf: Maybe(Hex_Coord)) {
 	for p, cell in maze {
 		if p == buf {
-			draw_hex(p.q, p.r, cell.walls, rl.BLUE)
+			draw_hex(p.q, p.r, cell.walls, rl.BLUE, nil)
 			continue
 		}
-		draw_hex(p.q, p.r, cell.walls, rl.WHITE)
+		draw_hex(p.q, p.r, cell.walls, rl.WHITE, nil)
 	}
 }
 

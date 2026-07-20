@@ -59,6 +59,13 @@ Coord_f64 :: struct {
 	x, y: f64,
 }
 
+Region :: enum {
+	INNER,
+	MIDDLE_INNER,
+	MIDDLE_OUTER,
+	OUTER,
+}
+
 EDITOR :: #config(EDITOR, false)
 
 Game_Memory :: struct {
@@ -122,39 +129,12 @@ update :: proc() {
 
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
-	draw_hex_maze(&g.maze, &g.occupied)
-	draw_assets(&g.maze, &g.occupied)
+	draw_hex_maze(&g.maze, &g.occupied, LAYERS)
+	draw_assets(&g.maze, &g.occupied, LAYERS)
 	draw_debug_overlay()
 	rl.EndDrawing()
 
 	free_all(context.temp_allocator)
-}
-
-draw_debug_overlay :: proc() {
-	pad :: i32(12)
-	line :: i32(20)
-	y := pad
-
-	rl.DrawText(
-		fmt.ctprintf("max_density: %.2f  [UP/DOWN]", g.max_density),
-		pad,
-		y,
-		18,
-		rl.YELLOW,
-	); y += line
-	rl.DrawText(
-		fmt.ctprintf("decay:       %.2f  [LEFT/RIGHT]", g.decay),
-		pad,
-		y,
-		18,
-		rl.YELLOW,
-	); y += line
-	y += 6
-	for i in 0 ..< LAYERS {
-		d := layer_density(i32(i), g.max_density, g.decay)
-		rl.DrawText(fmt.ctprintf("  layer %d: %.3f", i, d), pad, y, 16, rl.GRAY)
-		y += line
-	}
 }
 
 fill_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
@@ -196,6 +176,33 @@ break_walls :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string, max_density: f
 		}
 	}
 }
+
+get_region :: proc(layer: i32, total: i32) -> Region {
+	n := (f64(layer) / f64(total) * 100)
+	switch {
+	case n < 30:
+		return .INNER
+	case n < 50:
+		return .MIDDLE_INNER
+	case n < 70:
+		return .MIDDLE_OUTER
+	}
+	return .OUTER
+}
+region_color :: proc(region: Region) -> Maybe(rl.Color) {
+	switch region {
+	case .INNER:
+		return rl.Color{120, 30, 30, 255}
+	case .MIDDLE_INNER:
+		return rl.Color{100, 70, 20, 255}
+	case .MIDDLE_OUTER:
+		return rl.Color{20, 60, 100, 255}
+	case .OUTER:
+		return rl.Color{20, 60, 35, 255}
+	}
+	return nil
+}
+
 
 layer_density :: proc(layer: i32, max_density: f32, decay: f32) -> f32 {
 	return max_density * math.pow_f32(decay, f32(layer))
@@ -347,25 +354,33 @@ create_layer :: proc(maze: ^Maze, current, next: ^map[Hex_Coord]bool) {
 	}
 }
 
-draw_assets :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) {
+ASSET_FILL :: rl.Color{80, 60, 120, 255}
+WALL_COLOR :: rl.Color{180, 180, 180, 255}
+
+draw_assets :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string, layers: i32) {
 	for p in occupied {
 		cell, ok := maze[p]
 		if !ok {panic("asset cell not found in maze")}
-		draw_hex(p.q, p.r, cell.walls, rl.BLUE)
+		draw_hex(p.q, p.r, cell.walls, WALL_COLOR, ASSET_FILL)
 	}
 }
 
-draw_hex_maze :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) {
+draw_hex_maze :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string, layers: i32) {
 	for p, cell in maze {
 		if p in occupied {continue}
-		draw_hex(p.q, p.r, cell.walls, rl.WHITE)
+		region := get_region(cells_from_center(p.q, p.r), layers)
+		draw_hex(p.q, p.r, cell.walls, WALL_COLOR, region_color(region))
 	}
 }
 
-draw_hex :: proc(q, r: i32, walls: Walls, color: rl.Color) {
+draw_hex :: proc(q, r: i32, walls: Walls, color: rl.Color, fill: Maybe(rl.Color)) {
 	x, y := i32(WIDTH / 2), i32(HEIGHT / 2)
 	cx := HEX_SIZE * math.sqrt_f64(3) * (f64(q) + f64(r) / 2)
 	cy := HEX_SIZE * 3 / 2 * f64(r)
+
+	if f, ok := fill.(rl.Color); ok {
+		rl.DrawPoly(rl.Vector2{f32(cx) + f32(x), f32(cy) + f32(y)}, 6, f32(HEX_SIZE), -30, f)
+	}
 
 	points := [6]Coord_f64{}
 	for i in 0 ..< 6 {
@@ -410,4 +425,31 @@ inverse_direction :: proc(wall: Direction) -> Direction {
 		return .SOUTH_EAST
 	}
 	return .EAST
+}
+
+draw_debug_overlay :: proc() {
+	pad :: i32(12)
+	line :: i32(20)
+	y := pad
+
+	rl.DrawText(
+		fmt.ctprintf("max_density: %.2f  [UP/DOWN]", g.max_density),
+		pad,
+		y,
+		18,
+		rl.YELLOW,
+	); y += line
+	rl.DrawText(
+		fmt.ctprintf("decay:       %.2f  [LEFT/RIGHT]", g.decay),
+		pad,
+		y,
+		18,
+		rl.YELLOW,
+	); y += line
+	y += 6
+	for i in 0 ..< LAYERS {
+		d := layer_density(i32(i), g.max_density, g.decay)
+		rl.DrawText(fmt.ctprintf("  layer %d: %.3f", i, d), pad, y, 16, rl.GRAY)
+		y += line
+	}
 }
