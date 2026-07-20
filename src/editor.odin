@@ -48,8 +48,8 @@ editor_run :: proc() {
 			clear(&asset)
 			asset[Hex_Coord{0, 0}] = Cell{ALL_WALLS}
 		}
-		draw_ghost_maze(&ghost)
-		draw_asset_cells(&asset, buf)
+	editor_draw_ghost_maze(&ghost)
+	editor_draw_asset_cells(&asset, buf)
 		rl.EndDrawing()
 	}
 	time.sleep(time.Second)
@@ -134,19 +134,42 @@ hex_round :: proc(q, r: f64) -> Hex_Coord {
 	return Hex_Coord{i32(rq), i32(rr)}
 }
 
-draw_ghost_maze :: proc(maze: ^Maze) {
+editor_draw_ghost_maze :: proc(maze: ^Maze) {
 	for p, cell in maze {
-		draw_hex(p.q, p.r, cell.walls, rl.Color{40, 40, 40, 255}, nil)
+		editor_draw_hex(p.q, p.r, cell.walls, rl.Color{40, 40, 40, 255}, nil)
 	}
 }
 
-draw_asset_cells :: proc(maze: ^Maze, buf: Maybe(Hex_Coord)) {
+editor_draw_asset_cells :: proc(maze: ^Maze, buf: Maybe(Hex_Coord)) {
 	for p, cell in maze {
 		if p == buf {
-			draw_hex(p.q, p.r, cell.walls, rl.BLUE, nil)
+			editor_draw_hex(p.q, p.r, cell.walls, rl.BLUE, nil)
 			continue
 		}
-		draw_hex(p.q, p.r, cell.walls, rl.WHITE, nil)
+		editor_draw_hex(p.q, p.r, cell.walls, rl.WHITE, nil)
+	}
+}
+
+editor_draw_hex :: proc(q, r: i32, walls: Walls, color: rl.Color, fill: Maybe(rl.Color)) {
+	x, y := i32(WIDTH / 2), i32(HEIGHT / 2)
+	cx := HEX_SIZE * math.sqrt_f64(3) * (f64(q) + f64(r) / 2)
+	cy := HEX_SIZE * 3 / 2 * f64(r)
+
+	if f, ok := fill.?; ok {
+		rl.DrawPoly(rl.Vector2{f32(cx) + f32(x), f32(cy) + f32(y)}, 6, f32(HEX_SIZE), -30, f)
+	}
+
+	points := [6]Coord_f64{}
+	for i in 0 ..< 6 {
+		px, py := hex_corner(cx, cy, i)
+		points[i] = Coord_f64{px, py}
+	}
+	for i in 0 ..< 6 {
+		if RENDER_ORDER[i] not_in walls {continue}
+		j     := (i + 1) % 6
+		start := Coord{i32(points[i].x) + x, i32(points[i].y) + y}
+		end   := Coord{i32(points[j].x) + x, i32(points[j].y) + y}
+		rl.DrawLine(start.x, start.y, end.x, end.y, color)
 	}
 }
 

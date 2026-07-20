@@ -25,9 +25,19 @@ MOVE := [Direction]Hex_Coord {
 	.WEST       = {-1, 0},
 	.NORTH_WEST = {0, -1},
 }
-
 Walls :: bit_set[Direction]
 ALL_WALLS :: Walls{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
+
+Config :: enum u8 {
+	HIGHLIGHT_ASSETS,
+	HIGHLIGHT_REGIONS,
+}
+Hex_Cell :: enum u8 {
+	IS_ASSET,
+}
+
+Conf :: bit_set[Config]
+Hex :: bit_set[Hex_Cell]
 
 HEX_DIR := [6]Hex_Coord {
 	MOVE[.NORTH_EAST],
@@ -43,6 +53,9 @@ DECAY_STEP: f32 : 0.02
 
 HEX_EXITS := [6]Direction{.NORTH_EAST, .EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST}
 RENDER_ORDER := [6]Direction{.EAST, .SOUTH_EAST, .SOUTH_WEST, .WEST, .NORTH_WEST, .NORTH_EAST}
+
+ASSET_FILL :: rl.Color{80, 60, 120, 255}
+WALL_COLOR :: rl.Color{180, 180, 180, 255}
 
 Cell :: struct {
 	walls: Walls,
@@ -71,6 +84,7 @@ EDITOR :: #config(EDITOR, false)
 Game_Memory :: struct {
 	run:         bool,
 	maze:        Maze,
+	cfg:         Conf,
 	assets:      map[string]Hex_Asset,
 	occupied:    map[Hex_Coord]string,
 	max_density: f32,
@@ -98,6 +112,7 @@ game_init :: proc() {
 	g.max_density = 0.5
 	g.decay = 0.7
 	g.run = true
+	g.cfg = Conf{.HIGHLIGHT_ASSETS}
 
 	assets := make(map[string]Hex_Asset)
 	parse_hex_assets("src/assets/hex.txt", &assets)
@@ -116,21 +131,33 @@ regen :: proc(g: ^Game_Memory) {
 }
 
 update :: proc() {
-	if rl.IsKeyPressed(.ESCAPE) {g.run = false}
+	switch {
+	case rl.IsKeyPressed(.ESCAPE):
+		{g.run = false}
+	case rl.IsKeyPressed(.R):
+		toggle_config(&g.cfg, .HIGHLIGHT_REGIONS)
+	case rl.IsKeyPressed(.A):
+		toggle_config(&g.cfg, .HIGHLIGHT_ASSETS)
+	}
 
-	dirty := false
-	if rl.IsKeyPressed(.UP) {g.max_density = min(g.max_density + DENSITY_STEP, 1.0); dirty = true}
-	if rl.IsKeyPressed(
-		.DOWN,
-	) {g.max_density = max(g.max_density - DENSITY_STEP, 0.0); dirty = true}
-	if rl.IsKeyPressed(.RIGHT) {g.decay = min(g.decay + DECAY_STEP, 1.0); dirty = true}
-	if rl.IsKeyPressed(.LEFT) {g.decay = max(g.decay - DECAY_STEP, 0.0); dirty = true}
+	dirty := true
+	switch {
+	case rl.IsKeyPressed(.UP):
+		g.max_density = min(g.max_density + DENSITY_STEP, 1)
+	case rl.IsKeyPressed(.DOWN):
+		g.max_density = max(g.max_density - DENSITY_STEP, 0)
+	case rl.IsKeyPressed(.RIGHT):
+		g.decay = min(g.decay + DECAY_STEP, 1)
+	case rl.IsKeyPressed(.LEFT):
+		g.decay = max(g.decay - DECAY_STEP, 0)
+	case:
+		dirty = false
+	}
 	if dirty {regen(g)}
 
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
-	draw_hex_maze(&g.maze, &g.occupied, LAYERS)
-	draw_assets(&g.maze, &g.occupied, LAYERS)
+	draw_hex_maze(&g.maze, &g.occupied, LAYERS, g.cfg)
 	draw_debug_overlay()
 	rl.EndDrawing()
 
@@ -189,7 +216,7 @@ get_region :: proc(layer: i32, total: i32) -> Region {
 	}
 	return .OUTER
 }
-region_color :: proc(region: Region) -> Maybe(rl.Color) {
+region_color :: proc(region: Region) -> rl.Color {
 	switch region {
 	case .INNER:
 		return rl.Color{120, 30, 30, 255}
@@ -200,7 +227,7 @@ region_color :: proc(region: Region) -> Maybe(rl.Color) {
 	case .OUTER:
 		return rl.Color{20, 60, 35, 255}
 	}
-	return nil
+	return rl.GREEN
 }
 
 
@@ -354,32 +381,37 @@ create_layer :: proc(maze: ^Maze, current, next: ^map[Hex_Coord]bool) {
 	}
 }
 
-ASSET_FILL :: rl.Color{80, 60, 120, 255}
-WALL_COLOR :: rl.Color{180, 180, 180, 255}
-
-draw_assets :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string, layers: i32) {
-	for p in occupied {
-		cell, ok := maze[p]
-		if !ok {panic("asset cell not found in maze")}
-		draw_hex(p.q, p.r, cell.walls, WALL_COLOR, ASSET_FILL)
-	}
-}
-
-draw_hex_maze :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string, layers: i32) {
+draw_hex_maze :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string, layers: i32, cfg: Conf) {
 	for p, cell in maze {
-		if p in occupied {continue}
+		hex := Hex{}
+		_, ok := occupied[p]; if ok && .HIGHLIGHT_ASSETS in cfg {
+			hex += {.IS_ASSET}
+		}
 		region := get_region(cells_from_center(p.q, p.r), layers)
-		draw_hex(p.q, p.r, cell.walls, WALL_COLOR, region_color(region))
+		draw_hex(p.q, p.r, cell.walls, occupied, cfg, region, hex)
 	}
 }
 
-draw_hex :: proc(q, r: i32, walls: Walls, color: rl.Color, fill: Maybe(rl.Color)) {
+draw_hex :: proc(
+	q, r: i32,
+	walls: Walls,
+	occupied: ^map[Hex_Coord]string,
+	cfg: Conf,
+	region: Region,
+	hex: Hex,
+) {
 	x, y := i32(WIDTH / 2), i32(HEIGHT / 2)
 	cx := HEX_SIZE * math.sqrt_f64(3) * (f64(q) + f64(r) / 2)
 	cy := HEX_SIZE * 3 / 2 * f64(r)
 
-	if f, ok := fill.(rl.Color); ok {
-		rl.DrawPoly(rl.Vector2{f32(cx) + f32(x), f32(cy) + f32(y)}, 6, f32(HEX_SIZE), -30, f)
+	if .HIGHLIGHT_REGIONS in cfg {
+		rl.DrawPoly(
+			rl.Vector2{f32(cx) + f32(x), f32(cy) + f32(y)},
+			6,
+			f32(HEX_SIZE),
+			-30,
+			region_color(region),
+		)
 	}
 
 	points := [6]Coord_f64{}
@@ -390,10 +422,19 @@ draw_hex :: proc(q, r: i32, walls: Walls, color: rl.Color, fill: Maybe(rl.Color)
 	for i in 0 ..< 6 {
 		if RENDER_ORDER[i] not_in walls {continue}
 		j := (i + 1) % 6
+		dir := HEX_DIR[j]
+		neighbor := Hex_Coord{q + dir.q, r + dir.r}
+		if _, ok := occupied[neighbor]; ok {continue}
+
 		start := Coord{i32(points[i].x) + x, i32(points[i].y) + y}
 		end := Coord{i32(points[j].x) + x, i32(points[j].y) + y}
-		rl.DrawLine(start.x, start.y, end.x, end.y, color)
+		rl.DrawLine(start.x, start.y, end.x, end.y, wall_color(hex))
 	}
+}
+
+wall_color :: proc(hex: Hex) -> rl.Color {
+	if .IS_ASSET in hex {return rl.BLUE}
+	return rl.WHITE
 }
 
 hex_corner :: proc(cx, cy: f64, i: int) -> (f64, f64) {
@@ -407,6 +448,14 @@ shuffle :: proc(arr: ^[6]int) {
 		j := rand.int_max(i + 1)
 		arr[i], arr[j] = arr[j], arr[i]
 	}
+}
+
+toggle_config :: proc(cfg: ^Conf, field: Config) {
+	if field in cfg {
+		cfg^ -= {field}
+		return
+	}
+	cfg^ += {field}
 }
 
 inverse_direction :: proc(wall: Direction) -> Direction {

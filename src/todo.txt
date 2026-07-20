@@ -3,7 +3,7 @@ Maze
 ---------------------
 [✓] Custom hex assets
 [✓] Break walls based on regions
-[·] Color regions
+[✓] Color regions
 [·] Hex rotation
 [·] More custom assets based on region
 
