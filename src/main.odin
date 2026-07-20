@@ -68,6 +68,10 @@ Coord :: struct {
 Hex_Coord :: struct {
 	q, r: i32,
 }
+Cube_Coord :: struct {
+	q, r, s: i32,
+}
+
 Coord_f64 :: struct {
 	x, y: f64,
 }
@@ -77,6 +81,10 @@ Region :: enum {
 	MIDDLE_INNER,
 	MIDDLE_OUTER,
 	OUTER,
+}
+Rotation :: enum {
+	CLOCKWISE,
+	ANTI_CLOCKWISE,
 }
 
 EDITOR :: #config(EDITOR, false)
@@ -162,6 +170,36 @@ update :: proc() {
 	rl.EndDrawing()
 
 	free_all(context.temp_allocator)
+}
+
+hex_rotation :: proc(hex: Hex_Coord, origin: Hex_Coord, rotation: Rotation) -> Hex_Coord {
+	pos := axial_to_cube(hex)
+	og := axial_to_cube(origin)
+	vec := Cube_Coord{pos.q - og.q, pos.r - og.r, pos.s - og.s}
+	rot := Cube_Coord{}
+
+	switch rotation {
+	case .CLOCKWISE:
+		rot = Cube_Coord{-vec.r, -vec.s, -vec.q}
+	case .ANTI_CLOCKWISE:
+		rot = Cube_Coord{-vec.s, -vec.q, -vec.r}
+	}
+	return Hex_Coord{rot.q + og.q, rot.r + og.r}
+}
+
+wall_rotation :: proc(walls: Walls, rotation: Rotation) -> Walls {
+	next := Walls{}
+	for i in 0 ..< 6 {
+		dir := HEX_EXITS[i]
+		if dir not_in walls {continue}
+
+		j := (i + 1) % 6
+		if rotation == .ANTI_CLOCKWISE {
+			j = (i + 5) % 6
+		}
+		next += {HEX_EXITS[j]}
+	}
+	return next
 }
 
 fill_hex_maze :: proc(layers: int, maze: ^Maze, start: Hex_Coord) {
@@ -430,6 +468,10 @@ draw_hex :: proc(
 		end := Coord{i32(points[j].x) + x, i32(points[j].y) + y}
 		rl.DrawLine(start.x, start.y, end.x, end.y, wall_color(hex))
 	}
+}
+
+axial_to_cube :: proc(hex: Hex_Coord) -> Cube_Coord {
+	return Cube_Coord{q = hex.q, r = hex.r, s = -hex.q - hex.r}
 }
 
 wall_color :: proc(hex: Hex) -> rl.Color {

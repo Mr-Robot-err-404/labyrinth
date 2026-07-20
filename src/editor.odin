@@ -34,6 +34,11 @@ editor_run :: proc() {
 			rl.DrawText("saved asset!", WIDTH / 2 - 30, HEIGHT / 2, 20, rl.GREEN)
 			done = true
 
+		case rl.IsKeyPressed(.J):
+			editor_rotate(&asset, .ANTI_CLOCKWISE)
+		case rl.IsKeyPressed(.K):
+			editor_rotate(&asset, .CLOCKWISE)
+
 		case rl.IsMouseButtonPressed(.LEFT):
 			buf = nil
 			pos := rl.GetMousePosition()
@@ -48,11 +53,27 @@ editor_run :: proc() {
 			clear(&asset)
 			asset[Hex_Coord{0, 0}] = Cell{ALL_WALLS}
 		}
-	editor_draw_ghost_maze(&ghost)
-	editor_draw_asset_cells(&asset, buf)
+		editor_draw_ghost_maze(&ghost)
+		editor_draw_asset_cells(&asset, buf)
 		rl.EndDrawing()
 	}
 	time.sleep(time.Second)
+}
+
+editor_rotate :: proc(m: ^Maze, rotation: Rotation) {
+	transform := make(Maze)
+	defer delete(transform)
+
+	for coord, cell in m {
+		hex := hex_rotation(coord, Hex_Coord{0, 0}, rotation)
+		transform[hex] = Cell {
+			walls = wall_rotation(cell.walls, rotation),
+		}
+	}
+	clear(m)
+	for key, cell in transform {
+		m[key] = cell
+	}
 }
 
 passage :: proc(b: Hex_Coord, m: ^Maze, buf: ^Maybe(Hex_Coord)) {
@@ -166,9 +187,9 @@ editor_draw_hex :: proc(q, r: i32, walls: Walls, color: rl.Color, fill: Maybe(rl
 	}
 	for i in 0 ..< 6 {
 		if RENDER_ORDER[i] not_in walls {continue}
-		j     := (i + 1) % 6
+		j := (i + 1) % 6
 		start := Coord{i32(points[i].x) + x, i32(points[i].y) + y}
-		end   := Coord{i32(points[j].x) + x, i32(points[j].y) + y}
+		end := Coord{i32(points[j].x) + x, i32(points[j].y) + y}
 		rl.DrawLine(start.x, start.y, end.x, end.y, color)
 	}
 }

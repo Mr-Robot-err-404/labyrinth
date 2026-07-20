@@ -4,8 +4,8 @@ Maze
 [✓] Custom hex assets
 [✓] Break walls based on regions
 [✓] Color regions
-[·] Hex rotation
-[·] More custom assets based on region
+[✓] Hex rotation
+[·] Constrain assets to region and personal space
 
 ---------------------
 Minatour
