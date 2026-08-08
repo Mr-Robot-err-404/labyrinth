@@ -18,9 +18,11 @@ Node :: struct {
 	score: i32,
 }
 Pathfind :: struct {
-	path:  [dynamic]Hex_Coord,
-	start: Maybe(Hex_Coord),
-	end:   Maybe(Hex_Coord),
+	queue:   ^pq.Priority_Queue(Node),
+	visited: map[Hex_Coord]bool,
+	origin:  map[Hex_Coord]Hex_Coord,
+	path:    [dynamic]Hex_Coord,
+	target:  Hex_Coord,
 }
 
 build_path :: proc(
@@ -36,6 +38,29 @@ build_path :: proc(
 		curr = prev
 		append_elem(path, curr)
 		if curr == start {return}
+	}
+}
+
+step :: proc(pos: ^Hex_Coord, maze: ^Maze, p: ^Pathfind) {
+	if pq.len(p.queue^) == 0 {return}
+	node := pq.pop(p.queue)
+	pos^ = node.pos
+	if node.pos == p.target {return}
+
+	p.visited[node.pos] = true
+	cell := maze[node.pos]
+
+	for i in 0 ..< len(HEX_EXITS) {
+		wall := HEX_EXITS[i]
+		dir := HEX_DIR[i]
+		if wall in cell.walls {continue}
+
+		neighbor := Hex_Coord{node.pos.q + dir.q, node.pos.r + dir.r}
+		if _, ok := maze[neighbor]; !ok {continue}
+		if _, seen := p.visited[neighbor]; seen {continue}
+
+		pq.push(p.queue, Node{pos = neighbor, score = hex_distance(neighbor, p.target)})
+		p.origin[neighbor] = node.pos
 	}
 }
 

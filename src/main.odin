@@ -1,8 +1,10 @@
 package main
 
+import pq "core:container/priority_queue"
 import "core:fmt"
 import "core:math"
 import "core:math/rand"
+import "core:time"
 import rl "vendor:raylib"
 
 HEX_SIZE: f64 : 30
@@ -75,6 +77,10 @@ Cube_Coord :: struct {
 Coord_f64 :: struct {
 	x, y: f64,
 }
+Ticker :: struct {
+	last_tick: time.Time,
+	tick_rate: time.Duration,
+}
 
 Region :: enum {
 	INNER,
@@ -98,6 +104,8 @@ Game_Memory :: struct {
 	max_density: f32,
 	decay:       f32,
 	pathfind:    Pathfind,
+	minatour:    Minatour,
+	ticker:      Ticker,
 }
 g: ^Game_Memory
 
@@ -122,8 +130,21 @@ game_init :: proc() {
 	g.decay = 0.85
 	g.run = true
 	g.cfg = Conf{.HIGHLIGHT_ASSETS}
+	g.ticker = Ticker {
+		tick_rate = 500 * time.Millisecond,
+		last_tick = time.now(),
+	}
+	q := new(pq.Priority_Queue(Node))
+	pq.init(q, proc(a, b: Node) -> bool {return a.score < b.score}, pq.default_swap_proc(Node))
+
 	g.pathfind = Pathfind {
-		path = make([dynamic]Hex_Coord),
+		queue   = q,
+		path    = make([dynamic]Hex_Coord),
+		origin  = make(map[Hex_Coord]Hex_Coord),
+		visited = make(map[Hex_Coord]bool),
+	}
+	g.minatour = Minatour {
+		state = State.resting,
 	}
 	assets := make(map[string]Hex_Asset)
 	parse_hex_assets("src/assets/hex.txt", &assets)
@@ -153,16 +174,23 @@ update :: proc() {
 	case rl.IsMouseButtonPressed(.LEFT):
 		pos := rl.GetMousePosition()
 		coord := pixel_to_hex(pos.x, pos.y)
-		g.pathfind.start = coord
+		g.minatour.pos = coord
 	case rl.IsMouseButtonPressed(.RIGHT):
 		pos := rl.GetMousePosition()
 		coord := pixel_to_hex(pos.x, pos.y)
-		g.pathfind.end = coord
+		g.pathfind.target = coord
+
+	case rl.IsKeyPressed(.F):
+		pq.push(
+			g.pathfind.queue,
+			Node{pos = g.minatour.pos, score = hex_distance(g.minatour.pos, g.pathfind.target)},
+		)
+		g.minatour.state = .exploring
+	case rl.IsKeyPressed(.SEMICOLON):
+		g.minatour.state = .resting
 
 	case rl.IsKeyPressed(.SPACE):
-		start := g.pathfind.start.? or_break
-		end := g.pathfind.end.? or_break
-		priority_search(start, end, &g.maze, &g.pathfind.path)
+		priority_search(g.minatour.pos, g.pathfind.target, &g.maze, &g.pathfind.path)
 
 	case rl.IsKeyPressed(.COMMA):
 		clear(&g.pathfind.path)
@@ -182,6 +210,15 @@ update :: proc() {
 	}
 	if dirty {regen(g)}
 
+	switch g.minatour.state {
+	case .resting:
+	case .exploring:
+		if time.since(g.ticker.last_tick) >= g.ticker.tick_rate {
+			step(&g.minatour.pos, &g.maze, &g.pathfind)
+			g.ticker.last_tick = time.now()
+		}
+	case .loitering:
+	}
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
 	draw_hex_maze(&g.maze, &g.occupied, LAYERS, g.cfg)
@@ -276,8 +313,8 @@ get_region :: proc(layer: i32, total: i32) -> Region {
 }
 
 highlight_color :: proc(coord: Hex_Coord) -> (rl.Color, bool) {
-	if start, ok := g.pathfind.start.?; ok && start == coord {return rl.PURPLE, true}
-	if end, ok := g.pathfind.end.?; ok && end == coord {return rl.RED, true}
+	if g.minatour.pos == coord {return rl.PURPLE, true}
+	if g.pathfind.target == coord {return rl.RED, true}
 	return rl.BLANK, false
 }
 
