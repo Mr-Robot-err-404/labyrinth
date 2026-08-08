@@ -162,7 +162,7 @@ update :: proc() {
 	case rl.IsKeyPressed(.SPACE):
 		start := g.pathfind.start.? or_break
 		end := g.pathfind.end.? or_break
-		bfs_search(start, end, &g.maze, &g.pathfind.path)
+		priority_search(start, end, &g.maze, &g.pathfind.path)
 
 	case rl.IsKeyPressed(.COMMA):
 		clear(&g.pathfind.path)
@@ -420,6 +420,12 @@ starting_point :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string) -> Hex_Coor
 cells_from_center :: proc(q, r: i32) -> i32 {
 	s := -q - r
 	return max(math.abs(q), math.abs(r), math.abs(s))
+}
+
+hex_distance :: proc(a: Hex_Coord, b: Hex_Coord) -> i32 {
+	as := -a.q - a.r
+	bs := -b.q - b.r
+	return max(math.abs(a.q - b.q), math.abs(a.r - b.r), math.abs(as - bs))
 }
 
 remove_wall :: proc(coord: Hex_Coord, maze: ^Maze, wall: Direction) {

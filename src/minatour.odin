@@ -1,5 +1,6 @@
 package main
 
+import pq "core:container/priority_queue"
 import "core:container/queue"
 import "core:fmt"
 
@@ -11,6 +12,10 @@ State :: enum {
 	exploring,
 	loitering,
 	resting,
+}
+Node :: struct {
+	pos:   Hex_Coord,
+	score: i32,
 }
 Pathfind :: struct {
 	path:  [dynamic]Hex_Coord,
@@ -32,6 +37,42 @@ build_path :: proc(
 		append_elem(path, curr)
 		if curr == start {return}
 	}
+}
+
+priority_search :: proc(a: Hex_Coord, b: Hex_Coord, maze: ^Maze, path: ^[dynamic]Hex_Coord) {
+	visited := make(map[Hex_Coord]bool)
+	origin := make(map[Hex_Coord]Hex_Coord)
+	defer delete(origin)
+	defer delete(visited)
+
+	q: pq.Priority_Queue(Node)
+	defer pq.destroy(&q)
+	pq.init(&q, proc(a, b: Node) -> bool {return a.score < b.score}, pq.default_swap_proc(Node))
+	pq.push(&q, Node{pos = a, score = hex_distance(a, b)})
+
+	for pq.len(q) > 0 {
+		node := pq.pop(&q)
+		if node.pos == b {
+			build_path(a, b, path, origin)
+			return
+		}
+		visited[node.pos] = true
+		cell := maze[node.pos]
+
+		for i in 0 ..< len(HEX_EXITS) {
+			wall := HEX_EXITS[i]
+			dir := HEX_DIR[i]
+			if wall in cell.walls {continue}
+
+			neighbor := Hex_Coord{node.pos.q + dir.q, node.pos.r + dir.r}
+			if _, ok := maze[neighbor]; !ok {continue}
+			if _, seen := visited[neighbor]; seen {continue}
+
+			pq.push(&q, Node{pos = neighbor, score = hex_distance(neighbor, b)})
+			origin[neighbor] = node.pos
+		}
+	}
+	fmt.println("not found :|")
 }
 
 bfs_search :: proc(a: Hex_Coord, b: Hex_Coord, maze: ^Maze, path: ^[dynamic]Hex_Coord) {

@@ -10,5 +10,6 @@ Maze
 ---------------------
 Minatour
 ---------------------
+[✓] BFS Pathfinding
+[·] Real-time A* search 
 [·] Basic movement from cell -> cell
-[·] Pathfinding
