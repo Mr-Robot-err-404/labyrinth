@@ -10,4 +10,5 @@ Maze
 ---------------------
 Minatour
 ---------------------
-[·] Basic movement
+[·] Basic movement from cell -> cell
+[·] Pathfinding

@@ -97,6 +97,7 @@ Game_Memory :: struct {
 	occupied:    map[Hex_Coord]string,
 	max_density: f32,
 	decay:       f32,
+	pathfind:    Pathfind,
 }
 g: ^Game_Memory
 
@@ -117,11 +118,13 @@ main :: proc() {
 @(export)
 game_init :: proc() {
 	g = new(Game_Memory)
-	g.max_density = 0.5
-	g.decay = 0.7
+	g.max_density = 0.85
+	g.decay = 0.85
 	g.run = true
 	g.cfg = Conf{.HIGHLIGHT_ASSETS}
-
+	g.pathfind = Pathfind {
+		path = make([dynamic]Hex_Coord),
+	}
 	assets := make(map[string]Hex_Asset)
 	parse_hex_assets("src/assets/hex.txt", &assets)
 	g.assets = assets
@@ -146,8 +149,24 @@ update :: proc() {
 		toggle_config(&g.cfg, .HIGHLIGHT_REGIONS)
 	case rl.IsKeyPressed(.A):
 		toggle_config(&g.cfg, .HIGHLIGHT_ASSETS)
-	}
 
+	case rl.IsMouseButtonPressed(.LEFT):
+		pos := rl.GetMousePosition()
+		coord := pixel_to_hex(pos.x, pos.y)
+		g.pathfind.start = coord
+	case rl.IsMouseButtonPressed(.RIGHT):
+		pos := rl.GetMousePosition()
+		coord := pixel_to_hex(pos.x, pos.y)
+		g.pathfind.end = coord
+
+	case rl.IsKeyPressed(.SPACE):
+		start := g.pathfind.start.? or_break
+		end := g.pathfind.end.? or_break
+		bfs_search(start, end, &g.maze, &g.pathfind.path)
+
+	case rl.IsKeyPressed(.COMMA):
+		clear(&g.pathfind.path)
+	}
 	dirty := true
 	switch {
 	case rl.IsKeyPressed(.UP):
@@ -166,6 +185,7 @@ update :: proc() {
 	rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
 	draw_hex_maze(&g.maze, &g.occupied, LAYERS, g.cfg)
+	draw_path(&g.maze, &g.pathfind.path)
 	draw_debug_overlay()
 	rl.EndDrawing()
 
@@ -254,6 +274,13 @@ get_region :: proc(layer: i32, total: i32) -> Region {
 	}
 	return .OUTER
 }
+
+highlight_color :: proc(coord: Hex_Coord) -> (rl.Color, bool) {
+	if start, ok := g.pathfind.start.?; ok && start == coord {return rl.PURPLE, true}
+	if end, ok := g.pathfind.end.?; ok && end == coord {return rl.RED, true}
+	return rl.BLANK, false
+}
+
 region_color :: proc(region: Region) -> rl.Color {
 	switch region {
 	case .INNER:
@@ -419,6 +446,16 @@ create_layer :: proc(maze: ^Maze, current, next: ^map[Hex_Coord]bool) {
 	}
 }
 
+draw_path :: proc(maze: ^Maze, path: ^[dynamic]Hex_Coord) {
+	x, y := i32(WIDTH / 2), i32(HEIGHT / 2)
+	for p in path {
+		if _, ok := maze[p]; !ok {continue}
+		cx := HEX_SIZE * math.sqrt_f64(3) * (f64(p.q) + f64(p.r) / 2)
+		cy := HEX_SIZE * 3 / 2 * f64(p.r)
+		rl.DrawCircle(i32(cx) + x, i32(cy) + y, f32(HEX_SIZE) * 0.2, rl.GREEN)
+	}
+}
+
 draw_hex_maze :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string, layers: i32, cfg: Conf) {
 	for p, cell in maze {
 		hex := Hex{}
@@ -426,12 +463,12 @@ draw_hex_maze :: proc(maze: ^Maze, occupied: ^map[Hex_Coord]string, layers: i32,
 			hex += {.IS_ASSET}
 		}
 		region := get_region(cells_from_center(p.q, p.r), layers)
-		draw_hex(p.q, p.r, cell.walls, occupied, cfg, region, hex)
+		draw_hex(p, cell.walls, occupied, cfg, region, hex)
 	}
 }
 
 draw_hex :: proc(
-	q, r: i32,
+	p: Hex_Coord,
 	walls: Walls,
 	occupied: ^map[Hex_Coord]string,
 	cfg: Conf,
@@ -439,8 +476,8 @@ draw_hex :: proc(
 	hex: Hex,
 ) {
 	x, y := i32(WIDTH / 2), i32(HEIGHT / 2)
-	cx := HEX_SIZE * math.sqrt_f64(3) * (f64(q) + f64(r) / 2)
-	cy := HEX_SIZE * 3 / 2 * f64(r)
+	cx := HEX_SIZE * math.sqrt_f64(3) * (f64(p.q) + f64(p.r) / 2)
+	cy := HEX_SIZE * 3 / 2 * f64(p.r)
 
 	if .HIGHLIGHT_REGIONS in cfg {
 		rl.DrawPoly(
@@ -451,8 +488,11 @@ draw_hex :: proc(
 			region_color(region),
 		)
 	}
-
+	if highlight, ok := highlight_color(p); ok {
+		rl.DrawCircle(i32(cx) + x, i32(cy) + y, f32(HEX_SIZE) * 0.2, highlight)
+	}
 	points := [6]Coord_f64{}
+
 	for i in 0 ..< 6 {
 		px, py := hex_corner(cx, cy, i)
 		points[i] = Coord_f64{px, py}
@@ -461,7 +501,7 @@ draw_hex :: proc(
 		if RENDER_ORDER[i] not_in walls {continue}
 		j := (i + 1) % 6
 		dir := HEX_DIR[j]
-		neighbor := Hex_Coord{q + dir.q, r + dir.r}
+		neighbor := Hex_Coord{p.q + dir.q, p.r + dir.r}
 		if _, ok := occupied[neighbor]; ok {continue}
 
 		start := Coord{i32(points[i].x) + x, i32(points[i].y) + y}
