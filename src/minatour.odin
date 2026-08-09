@@ -16,9 +16,10 @@ State :: enum {
 Node :: struct {
 	pos:   Hex_Coord,
 	score: i32,
+	cost:  i32,
 }
 Pathfind :: struct {
-	queue:   ^pq.Priority_Queue(Node),
+	stack:   [dynamic]Hex_Coord,
 	visited: map[Hex_Coord]bool,
 	origin:  map[Hex_Coord]Hex_Coord,
 	path:    [dynamic]Hex_Coord,
@@ -41,50 +42,37 @@ build_path :: proc(
 	}
 }
 
-backtrack :: proc(
-	pos: ^Hex_Coord,
-	next: Node,
-	q: ^pq.Priority_Queue(Node),
-	origin: map[Hex_Coord]Hex_Coord,
-) -> bool {
-	for i in 0 ..< 6 {
-		dir := HEX_DIR[i]
-		neighbor := Hex_Coord{pos.q + dir.q, pos.r + dir.r}
-		if neighbor == next.pos {return false}
-	}
-	prev, okay := origin[pos^]
-	if !okay {return false}
-	pos^ = prev
-	return true
-}
-
 step :: proc(pos: ^Hex_Coord, maze: ^Maze, p: ^Pathfind) {
-	if pq.len(p.queue^) == 0 {return}
+	if len(p.stack) == 0 {return}
+	pos^ = p.stack[len(p.stack) - 1]
 	if pos^ == p.target {return}
 
-	next, ok := pq.peek_safe(p.queue^)
-	if !ok {return}
-	if ok = backtrack(pos, next, p.queue, p.origin); ok {return}
+	p.visited[pos^] = true
+	cell := maze[pos^]
 
-	node := pq.pop(p.queue)
-	pos^ = node.pos
-	if node.pos == p.target {return}
+	best := Hex_Coord{}
+	optimal := max(i32)
 
-	p.visited[node.pos] = true
-	cell := maze[node.pos]
-
-	for i in 0 ..< len(HEX_EXITS) {
+	for i in 0 ..< 6 {
 		wall := HEX_EXITS[i]
 		dir := HEX_DIR[i]
 		if wall in cell.walls {continue}
 
-		neighbor := Hex_Coord{node.pos.q + dir.q, node.pos.r + dir.r}
-		if _, ok := maze[neighbor]; !ok {continue}
-		if _, seen := p.visited[neighbor]; seen {continue}
+		neighbor := Hex_Coord{pos.q + dir.q, pos.r + dir.r}
+		if neighbor not_in maze {continue}
+		if p.visited[neighbor] {continue}
 
-		pq.push(p.queue, Node{pos = neighbor, score = hex_distance(neighbor, p.target)})
-		p.origin[neighbor] = node.pos
+		score := hex_distance(neighbor, p.target)
+		if score < optimal {
+			best = neighbor
+			optimal = score
+		}
 	}
+	if optimal < max(i32) {
+		append(&p.stack, best)
+		return
+	}
+	pop(&p.stack)
 }
 
 priority_search :: proc(a: Hex_Coord, b: Hex_Coord, maze: ^Maze, path: ^[dynamic]Hex_Coord) {
@@ -166,5 +154,22 @@ is_deadend :: proc(pos: Hex_Coord, cell: Cell, visited: map[Hex_Coord]bool, maze
 		if _, ok := maze[neighbor]; !ok {continue}
 		if _, seen := visited[neighbor]; !seen {return false}
 	}
+	return true
+}
+
+backtrack :: proc(
+	pos: ^Hex_Coord,
+	next: Node,
+	q: ^pq.Priority_Queue(Node),
+	origin: map[Hex_Coord]Hex_Coord,
+) -> bool {
+	for i in 0 ..< 6 {
+		dir := HEX_DIR[i]
+		neighbor := Hex_Coord{pos.q + dir.q, pos.r + dir.r}
+		if neighbor == next.pos {return false}
+	}
+	prev, okay := origin[pos^]
+	if !okay {return false}
+	pos^ = prev
 	return true
 }

@@ -1,6 +1,5 @@
 package main
 
-import pq "core:container/priority_queue"
 import "core:fmt"
 import "core:math"
 import "core:math/rand"
@@ -134,11 +133,8 @@ game_init :: proc() {
 		tick_rate = 500 * time.Millisecond,
 		last_tick = time.now(),
 	}
-	q := new(pq.Priority_Queue(Node))
-	pq.init(q, proc(a, b: Node) -> bool {return a.score < b.score}, pq.default_swap_proc(Node))
-
 	g.pathfind = Pathfind {
-		queue   = q,
+		stack   = make([dynamic]Hex_Coord),
 		path    = make([dynamic]Hex_Coord),
 		origin  = make(map[Hex_Coord]Hex_Coord),
 		visited = make(map[Hex_Coord]bool),
@@ -181,10 +177,7 @@ update :: proc() {
 		g.pathfind.target = coord
 
 	case rl.IsKeyPressed(.F):
-		pq.push(
-			g.pathfind.queue,
-			Node{pos = g.minatour.pos, score = hex_distance(g.minatour.pos, g.pathfind.target)},
-		)
+		append_elem(&g.pathfind.stack, g.minatour.pos)
 		g.minatour.state = .exploring
 	case rl.IsKeyPressed(.SEMICOLON):
 		g.minatour.state = .resting

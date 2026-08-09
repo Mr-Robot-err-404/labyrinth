@@ -11,5 +11,11 @@ Maze
 Minatour
 ---------------------
 [✓] BFS Pathfinding
-[·] Real-time A* search 
+[✓] DFS Minatour walk
 [·] Basic movement from cell -> cell
+
+---------------------
+BUG report
+---------------------
+[·] Passed through asset wall :: make sure cell state aligns with assets
+
